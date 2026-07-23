@@ -260,3 +260,33 @@ class AdminTariffUpdateAPIView(APIView):
             except Exception as e:
                 return Response({"message": f"تعذر التحديث: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+# أضف هذا الكود في نهاية ملف core/views.py لتمثيل واجهة محاكاة عمليات منتصف الليل يدوياً
+
+from core.services.task_service import TaskService
+
+class AdminTriggerDailyTasksAPIView(APIView):
+    def post(self, request, meter_id):
+        # استقبال تاريخ اليوم المراد تشغيل محاكاة منتصف الليل له (مثل: "2026-07-23")
+        target_date_str = request.data.get('date', None)
+        if not target_date_str:
+            return Response({"message": "يرجى تحديد تاريخ المحاكاة المستهدف."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+            # 1. تشغيل التنبؤ اليومي وكشف خلل الأمس تلقائياً
+            forecast = TaskService.run_daily_prediction_and_anomaly_detection(meter_id, target_date)
+            # 2. تشغيل توليد الإشعارات التكيفية اليومية
+            TaskService.run_daily_adaptive_notifications(meter_id, target_date)
+            
+            return Response({
+                "status": "success",
+                "message": f"تمت محاكاة وتشغيل مهام منتصف الليل بنجاح للتاريخ {target_date_str}.",
+                "data": {
+                    "isAnomalousDetected": forecast.isAnomalous,
+                    "deviationKWh": forecast.deviationAmountKWh
+                }
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"message": f"خطأ تشغيلي: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

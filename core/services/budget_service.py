@@ -14,7 +14,9 @@ class BudgetService:
             # جلب إصدار التعرفة الفعال حالياً في قاعدة البيانات
             active_version = TariffVersion.objects.get(isActive=True)
             # جلب الشرائح التابعة له مرتبة من الأدنى للأعلى
-            tiers = active_version.tiers.all().order_name = active_version.tiers.order_by('tierNumber')
+            # tiers = active_version.tiers.all().order_name = active_version.tiers.order_by('tierNumber')
+            tiers = active_version.tiers.order_by('tierNumber')
+
         except ObjectDoesNotExist:
             # في حال عدم وجود تعرفة مدخلة، نطبق القيمة الافتراضية لعام 2025 كحزام أمان
             # الشريحة الأولى: حتى 300 ك.و.س بسعر 600 ل.س، وما فوق بسعر 1400 ل.س

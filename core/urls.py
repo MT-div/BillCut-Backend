@@ -5,6 +5,7 @@ from .views import (
     AdminMeterListCreateAPIView,
     AdminMeterUnassignmentAPIView,
     AdminTariffUpdateAPIView,
+    AdminTriggerDailyTasksAPIView,
     AdminUserDetailAPIView,
     BulkIngestionAPIView,
     ConsumptionUpdateAPIView,
@@ -52,4 +53,6 @@ urlpatterns = [
     
     # 7. روابط إدارة وتحديث وإصدار التعرفة الكهربائية لمدير النظام (Admin)
     path('admin/tariff/update/', AdminTariffUpdateAPIView.as_view(), name='api_admin_tariff_update'),
+    path('admin/system/trigger_daily_tasks/<uuid:meter_id>/', AdminTriggerDailyTasksAPIView.as_view(), name='api_admin_trigger_tasks'),
+
 ]
