@@ -117,7 +117,11 @@ class NotificationSettingsUpdateSerializer(serializers.ModelSerializer):
         model = NotificationSettings
         fields = ['budgetPushEnabled', 'tierPushEnabled', 'anomalyPushEnabled']
 
-
+# 12. DTO لتحديث الاسم وتعيين العداد الافتراضي للمشترك (UC_3)
+class UserMeterPreferenceUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserMeterPreference
+        fields = ['alias', 'isDefault']
 # 13. DTO لإسناد العداد لمستخدم مخصص من الأدمن (UC_16)
 class AssignMeterSerializer(serializers.Serializer):
     userId = serializers.IntegerField(required=True)
