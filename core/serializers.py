@@ -116,3 +116,26 @@ class NotificationSettingsUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationSettings
         fields = ['budgetPushEnabled', 'tierPushEnabled', 'anomalyPushEnabled']
+
+
+# 13. DTO لإسناد العداد لمستخدم مخصص من الأدمن (UC_16)
+class AssignMeterSerializer(serializers.Serializer):
+    userId = serializers.IntegerField(required=True)
+    meterId = serializers.UUIDField(required=True)
+    alias = serializers.CharField(max_length=100, required=True)
+
+# 14. DTO لإلغاء إسناد العداد عن مستخدم (UC_16)
+class UnassignMeterSerializer(serializers.Serializer):
+    userId = serializers.IntegerField(required=True)
+    meterId = serializers.UUIDField(required=True)
+
+# 15. DTO لتحديث التعرفة وإصدار الشرائح ديناميكياً من الأدمن (UC_15)
+class TariffTierInputSerializer(serializers.Serializer):
+    tierNumber = serializers.IntegerField(min_value=1)
+    startKWh = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
+    endKWh = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    pricePerKWh = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
+
+class TariffVersionCreateSerializer(serializers.Serializer):
+    effectiveDate = serializers.DateField(required=True)
+    tiers = serializers.ListField(child=TariffTierInputSerializer(), allow_empty=False)

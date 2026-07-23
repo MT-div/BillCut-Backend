@@ -226,7 +226,7 @@ from .serializers import (
     NotificationSerializer, 
     NotificationSettingsUpdateSerializer
 )
-from .models import Notification, NotificationSettings, User
+from .models import Meter, Notification, NotificationSettings, User
 
 # 1. واجهة التحليلات والتنبؤ والخلل الموحدة (View Analytics API)
 class MeterAnalyticsAPIView(APIView):
@@ -296,5 +296,209 @@ class NotificationSettingsAPIView(APIView):
                 "message": "تم حفظ تفضيلات وتصفية الإشعارات بنجاح.",
                 "data": serializer.data
             }, status=status.HTTP_200_OK)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)\
+        
+
+
+# أضف هذه الأكواد في نهاية ملف core/views.py لإغلاق وبرمجة كامل الـ APIs المتبقية للنظام
+
+from core.models import UserMeterPreference, TariffVersion, TariffTier
+from .serializers import (
+    UserMeterPreferenceUpdateSerializer, 
+    AssignMeterSerializer, 
+    UnassignMeterSerializer, 
+    TariffVersionCreateSerializer
+)
+
+# ==================== أولاً: واجهات المشترك (Resident User) ====================
+
+# 1. واجهة إدارة وتخصيص العدادات الخاصة بالمشترك (UC_3)
+class UserMeterPreferenceAPIView(APIView):
+    def put(self, request, preference_id):
+        try:
+            pref = UserMeterPreference.objects.get(pk=preference_id)
+        except UserMeterPreference.DoesNotExist:
+            return Response({"message": "سجل ارتباط العداد غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = UserMeterPreferenceUpdateSerializer(pref, data=request.data, partial=True)
+        if serializer.is_valid():
+            # إذا حدد المستخدم هذا العداد كافتراضي، نقوم بإلغاء الافتراضي عن العدادات الأخرى له
+            if serializer.validated_data.get('isDefault', False):
+                UserMeterPreference.objects.filter(user=pref.user).update(isDefault=False)
+                
+            serializer.save()
+            return Response({
+                "status": "success",
+                "message": "تم تحديث تفضيلات العداد بنجاح.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== ثانياً: واجهات الإدارة لمدير النظام (Admin) ====================
+
+# 2. واجهة تعديل وحذف حساب مستخدم من قبل الأدمن (UC_13)
+class AdminUserDetailAPIView(APIView):
+    def put(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id, role='RESIDENT')
+        except User.DoesNotExist:
+            return Response({"message": "المستخدم غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+        # تعديل الاسم الكامل أو الهاتف
+        fullName = request.data.get('fullName', user.fullName)
+        phoneNumber = request.data.get('phoneNumber', user.phoneNumber)
+        
+        # التأكد من عدم تكرار الهاتف
+        if User.objects.filter(phoneNumber=phoneNumber).exclude(pk=user_id).exists():
+            return Response({"message": "رقم الهاتف هذا مسجل مسبقاً لمستخدم آخر."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.fullName = fullName
+        user.phoneNumber = phoneNumber
+        user.save()
+        
+        return Response({
+            "status": "success",
+            "message": "تم تحديث بيانات حساب المستخدم بنجاح."
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id, role='RESIDENT')
+            user.delete() # الحذف المتتالي لـ Django سيقوم بمسح تفضيلاته وتأمين الحذف النظيف
+            return Response({
+                "status": "success",
+                "message": "تم حذف حساب المستخدم وجميع ارتباطاته بنجاح من النظام."
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"message": "المستخدم غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+
+# 3. واجهة إضافة وإدارة وحذف العدادات الفيزيائية من قبل الأدمن (UC_14)
+class AdminMeterListCreateAPIView(APIView):
+    def post(self, request):
+        # إضافة عداد فيزيائي جديد للنظام
+        meter_id_raw = request.data.get('meterId', None)
+        if not meter_id_raw:
+            return Response({"message": "يجب تزويد المعرّف الفيزيائي للعداد (UUID/MAC)."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if Meter.objects.filter(pk=meter_id_raw).exists():
+            return Response({"message": "خطأ: هذا العداد مسجل مسبقاً كجهاز نشط."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            meter = Meter.objects.create(meterId=meter_id_raw)
+            return Response({
+                "status": "success",
+                "message": "تم تسجيل العداد الفيزيائي الجديد بنجاح في النظام.",
+                "data": {"meterId": meter.meterId, "registerDate": meter.registerDate}
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"message": f"تعذر الإضافة: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AdminMeterDetailAPIView(APIView):
+    def delete(self, request, meter_id):
+        # حذف عداد بالكامل ومسح قراءاته (تركيب وجودي)
+        try:
+            meter = Meter.objects.get(pk=meter_id)
+            meter.delete()
+            return Response({
+                "status": "success",
+                "message": "تم حذف العداد الفيزيائي وجميع سجلاته وقراءاته وتنبؤاته نهائياً من النظام."
+            }, status=status.HTTP_200_OK)
+        except Meter.DoesNotExist:
+            return Response({"message": "العداد غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+
+# 4. واجهة إسناد وإلغاء إسناد العدادات للمستخدمين (UC_16)
+class AdminMeterAssociationAPIView(APIView):
+    def post(self, request):
+        # إسناد العداد لمستخدم
+        serializer = AssignMeterSerializer(data=request.data)
+        if serializer.is_valid():
+            u_id = serializer.validated_data['userId']
+            m_id = serializer.validated_data['meterId']
+            alias = serializer.validated_data['alias']
+            
+            try:
+                user = User.objects.get(pk=u_id, role='RESIDENT')
+                meter = Meter.objects.get(pk=m_id)
+            except (User.DoesNotExist, Meter.DoesNotExist):
+                return Response({"message": "المستخدم أو العداد غير موجود في سجلات النظام."}, status=status.HTTP_404_NOT_FOUND)
+
+            # منع تكرار الإسناد
+            pref, created = UserMeterPreference.objects.get_or_create(
+                user=user,
+                meter=meter,
+                defaults={'alias': alias, 'isDefault': False}
+            )
+            
+            if not created:
+                return Response({"message": "هذا العداد مسند بالفعل لهذا المستخدم مسبقاً."}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({
+                "status": "success",
+                "message": "تم إسناد العداد للمستخدم المختار بنجاح في النظام."
+            }, status=status.HTTP_201_CREATED)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AdminMeterUnassignmentAPIView(APIView):
+    def post(self, request):
+        # إلغاء إسناد عداد عن مستخدم
+        serializer = UnassignMeterSerializer(data=request.data)
+        if serializer.is_valid():
+            u_id = serializer.validated_data['userId']
+            m_id = serializer.validated_data['meterId']
+            
+            try:
+                pref = UserMeterPreference.objects.get(user_id=u_id, meter_id=m_id)
+                pref.delete()
+                return Response({
+                    "status": "success",
+                    "message": "تم إلغاء إسناد العداد عن حساب المستخدم بنجاح."
+                }, status=status.HTTP_200_OK)
+            except UserMeterPreference.DoesNotExist:
+                return Response({"message": "سجل الارتباط غير موجود مسبقاً."}, status=status.HTTP_404_NOT_FOUND)
+                
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# 5. واجهة تحديث وإصدار تسعيرة الشرائح الحكومية ديناميكياً من الويب (UC_15)
+class AdminTariffUpdateAPIView(APIView):
+    def post(self, request):
+        serializer = TariffVersionCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            eff_date = serializer.validated_data['effectiveDate']
+            tiers_data = serializer.validated_data['tiers']
+            
+            # تعطيل جميع إصدارات التعرفة السابقة
+            TariffVersion.objects.all().update(isActive=False)
+            
+            # إنشاء إصدار تعرفة نشط وجديد
+            new_version = TariffVersion.objects.create(
+                effectiveDate=eff_date,
+                isActive=True
+            )
+            
+            # إنشاء وحفظ الشرائح التابعة للإصدار الجديد
+            tiers_to_create = []
+            for item in tiers_data:
+                tiers_to_create.append(
+                    TariffTier(
+                        tariffVersion=new_version,
+                        tierNumber=item['tierNumber'],
+                        startKWh=item['startKWh'],
+                        endKWh=item['endKWh'],
+                        pricePerKWh=item['pricePerKWh']
+                    )
+                )
+            
+            TariffTier.objects.bulk_create(tiers_to_create)
+            
+            return Response({
+                "status": "success",
+                "message": f"تم إصدار وتفعيل نسخة التعرفة الجديدة لعام {eff_date.year} بنجاح مع {len(tiers_to_create)} شرائح ديناميكية."
+            }, status=status.HTTP_201_CREATED)
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
