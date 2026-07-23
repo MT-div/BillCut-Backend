@@ -1,7 +1,11 @@
+from datetime import datetime 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import authenticate
+from django.utils.timezone import make_aware
+
+# بقية الكود كما هو تماماً دون أي تغيير...
 
 # استيراد عقود البيانات (الـ DTOs)
 from .serializers import (
@@ -127,3 +131,89 @@ class SetBudgetAPIView(APIView):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+# أضف هذا الكود في نهاية ملف core/views.py تماماً لبرمجة متحكم الـ Dashboard
+
+from core.services.dashboard_service import DashboardService
+from .serializers import DashboardResponseSerializer
+
+
+# أضف هذا الأكواد في نهاية ملف core/views.py لبرمجة متحكمات الواجهات البرمجية لإنترنت الأشياء والـ Dashboard
+
+from django.utils.timezone import make_aware
+from core.services.ingestion_service import IngestionService
+from .serializers import ConsumptionUpdateSerializer, BulkIngestionSerializer, DashboardResponseSerializer
+
+# 1. واجهة استقبال قراءة العداد بالواط اللحظي والتراكم التلقائي (Live Ingestion API)
+class ConsumptionUpdateAPIView(APIView):
+    def post(self, request, meter_id):
+        serializer = ConsumptionUpdateSerializer(data=request.data)
+        if serializer.is_valid():
+            watts = serializer.validated_data['watts']
+            timestamp_raw = serializer.validated_data['timestamp']
+            
+            # تحويل الطابع الزمني وتأصيل منطق المنطقة الزمنية لدجانغو
+            dt = make_aware(datetime.fromtimestamp(timestamp_raw))
+            
+            try:
+                # استدعاء خدمة استقبال وحساب وتراكم الاستهلاك
+                reading = IngestionService.process_live_reading(meter_id, watts, dt)
+                return Response({
+                    "status": "success",
+                    "message": "تم استلام قراءة الواط اللحظية وتراكمها بنجاح.",
+                    "data": {
+                        "readingId": reading.readingId,
+                        "cumulativeWh": reading.cumulativeWh,
+                        "timestamp": reading.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({
+                    "status": "error",
+                    "message": f"خطأ برمي أثناء استقبال البيانات: {str(e)}"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# 2. واجهة الحقن والتهيئة الجماعية التراكمية التاريخية للعداد (Bulk Import API)
+class BulkIngestionAPIView(APIView):
+    def post(self, request, meter_id):
+        serializer = BulkIngestionSerializer(data=request.data)
+        if serializer.is_valid():
+            readings_data = serializer.validated_data['readings']
+            
+            try:
+                # استدعاء خدمة معالجة وحقن البيانات الجماعية المجمعة (O(1) Transaction)
+                records_created = IngestionService.process_bulk_backfill(meter_id, readings_data)
+                return Response({
+                    "status": "success",
+                    "message": f"تم تهيئة وحقن {records_created} قراءة تاريخية مجمعة للعداد بنجاح."
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({
+                    "status": "error",
+                    "message": f"تعذر إتمام الحقن الجماعي: {str(e)}"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# 3. واجهة الـ Dashboard التفاعلية واللحظية المحدثة بنظام الكاش السريع
+class MeterDashboardAPIView(APIView):
+    def get(self, request, meter_id):
+        simulated_date = request.query_params.get('simulated_date', None)
+        
+        try:
+            # استدعاء الخدمة الحسابية اللحظية والذكية للحساب بالاستعانة بالكاش
+            dashboard_data = DashboardService.get_dashboard_data(meter_id, simulated_date)
+            serializer = DashboardResponseSerializer(dashboard_data)
+            return Response({
+                "status": "success",
+                "message": "تم استرداد بيانات لوحة المراقبة بنجاح باستخدام ذاكرة الكاش السريعة.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"حدث خطأ أثناء تجميع البيانات: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

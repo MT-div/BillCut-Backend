@@ -45,3 +45,38 @@ class MeterPreferenceSerializer(serializers.ModelSerializer):
 # 6. DTO الخاص بضبط وحفظ الميزانية المالية بالليرة السورية
 class BudgetSerializer(serializers.Serializer):
     targetBudgetSYP = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1.0)
+
+# أضف هذا الكود في نهاية ملف core/serializers.py تماماً لتوثيق الـ DTO الخاص بالـ Dashboard
+
+class DashboardResponseSerializer(serializers.Serializer):
+    meterId = serializers.UUIDField()
+    simulatedDate = serializers.DateField()
+    cycleProgressDays = serializers.IntegerField()
+    cycleRemainingDays = serializers.IntegerField()
+    cycleStartDate = serializers.DateField()
+    cycleEndDate = serializers.DateField()
+    cycleActualConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    accumulatedCostSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
+    predictedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
+    todayActualKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    todayPredictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    avgSubTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    avgBudgetTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+# أضف هذا الأكواد في نهاية ملف core/serializers.py لتوثيق الـ DTOs الجدد لاستقبال الاستهلاك والحقن
+
+# 7. DTO الخاص باستقبال قراءة العداد بالواط اللحظي والتوقيت
+class ConsumptionUpdateSerializer(serializers.Serializer):
+    watts = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
+    timestamp = serializers.IntegerField() # نمرره كطابع زمني رقمي (Unix Timestamp) لمرونة المحاكاة والدارة
+
+# 8. DTO الخاص بالحقن الجماعي التراكمي التاريخي للعداد (Bulk Ingestion)
+class BulkIngestionItemSerializer(serializers.Serializer):
+    timestamp = serializers.IntegerField()
+    cumulativeWh = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0.0)
+
+class BulkIngestionSerializer(serializers.Serializer):
+    readings = serializers.ListField(
+        child=BulkIngestionItemSerializer(),
+        allow_empty=False
+    )

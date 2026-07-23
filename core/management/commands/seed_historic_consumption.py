@@ -59,7 +59,12 @@ class Command(BaseCommand):
                 # مثال: قراءة 12:04 وقراءة 12:11 يتم تجميعهما معاً تحت كتلة الـ 12:15
                 minute_block = (dt.minute // 15) * 15
                 rounded_dt = dt.replace(minute=minute_block, second=0, microsecond=0)
+# ابحث عن السطر 54 داخل ملف seed_historic_consumption.py واستبدله كالتالي:
 
+                # حساب الطاقة المستهلكة بالواط ساعي مع ضربها بـ "معامل المواءمة السوري" 0.15
+                # Watts * (6 / 3600) * 0.15 (Syrian Scaling Factor)
+                #energy_wh = watts * Decimal('6') / Decimal('3600') * Decimal('0.15')
+                
                 # حساب الطاقة المستهلكة في الـ 6 ثوانٍ بالواط ساعي Wh
                 energy_wh = watts * Decimal('6') / Decimal('3600')
 

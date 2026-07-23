@@ -4,6 +4,7 @@ from django.db import models
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 # 1. كلاس المستخدم المخصص الممتد من كلاس دجانغو الأساسي (Custom User Model)
 class User(AbstractUser):
@@ -62,7 +63,7 @@ class ConsumptionReading(models.Model):
     readingId = models.BigAutoField(primary_key=True)
     meter = models.ForeignKey(Meter, on_delete=models.CASCADE, related_name='readings')
     cumulativeWh = models.DecimalField(max_digits=15, decimal_places=2)
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(default=timezone.now) # تعديل لمنع التجاوز القسري للتاريخ
 
     def __str__(self):
         return f"Reading {self.readingId} for Meter {self.meter.meterId}"
@@ -105,7 +106,7 @@ class Notification(models.Model):
     message = models.TextField()
     type = models.CharField(max_length=30) # (ANOMALY, BUDGET_NOTICE, TIER_NOTICE)
     isRead = models.BooleanField(default=False)
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(default=timezone.now) # تعديل لمرونة الإشعارات
 
     def __str__(self):
         return f"Notification {self.notificationId}: {self.title}"
