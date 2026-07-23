@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Meter, UserMeterPreference, Budget, NotificationSettings
+from .models import Notification, User, Meter, UserMeterPreference, Budget, NotificationSettings
 
 # 1. DTO الخاص باسترجاع بيانات المستخدم الأساسية
 class UserSerializer(serializers.ModelSerializer):
@@ -80,3 +80,39 @@ class BulkIngestionSerializer(serializers.Serializer):
         child=BulkIngestionItemSerializer(),
         allow_empty=False
     )
+
+
+
+class MonthlyHistoryItemSerializer(serializers.Serializer):
+    monthName = serializers.CharField()
+    consumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+class CycleForecastSerializer(serializers.Serializer):
+    predictedMonth1KWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    predictedMonth2KWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    expectedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+class DailyHistoryItemSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    actualKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    predictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    isAnomalous = serializers.BooleanField()
+    deviationKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+class AnalyticsResponseSerializer(serializers.Serializer):
+    meterId = serializers.UUIDField()
+    monthlyHistory = serializers.ListField(child=MonthlyHistoryItemSerializer())
+    currentCycleForecast = CycleForecastSerializer()
+    dailyHistory = serializers.ListField(child=DailyHistoryItemSerializer())
+
+# 10. DTO الخاص باسترجاع وعرض قائمة الإشعارات لمركز التنبيهات
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['notificationId', 'title', 'message', 'type', 'isRead', 'timestamp']
+
+# 11. DTO الخاص بتحديث تفضيلات الإشعارات للمستهلك
+class NotificationSettingsUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSettings
+        fields = ['budgetPushEnabled', 'tierPushEnabled', 'anomalyPushEnabled']

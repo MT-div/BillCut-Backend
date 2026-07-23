@@ -217,3 +217,84 @@ class MeterDashboardAPIView(APIView):
                 "status": "error",
                 "message": f"حدث خطأ أثناء تجميع البيانات: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+
+from core.services.analytics_service import AnalyticsService
+from .serializers import (
+    AnalyticsResponseSerializer, 
+    NotificationSerializer, 
+    NotificationSettingsUpdateSerializer
+)
+from .models import Notification, NotificationSettings, User
+
+# 1. واجهة التحليلات والتنبؤ والخلل الموحدة (View Analytics API)
+class MeterAnalyticsAPIView(APIView):
+    def get(self, request, meter_id):
+        simulated_date = request.query_params.get('simulated_date', None)
+        try:
+            # استدعاء الخدمة البيانية الموحدة لحساب وعرض المخططات
+            analytics_data = AnalyticsService.get_analytics_data(meter_id, simulated_date)
+            serializer = AnalyticsResponseSerializer(analytics_data)
+            return Response({
+                "status": "success",
+                "message": "تم استرداد بيانات التحليلات والرسوم البيانية بنجاح.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"تعذر جلب بيانات التحليلات: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# 2. واجهة مركز الإشعارات وتصفير القراءة التلقائي الجماعي (Notification Center API)
+class NotificationLogAPIView(APIView):
+    def get(self, request, meter_id):
+        try:
+            # جلب كافة الإشعارات للعداد المذكور مرتبة من الأحدث للأقدم
+            notifications = Notification.objects.filter(meter_id=meter_id).order_by('-timestamp')
+            
+            # محاكاة التحديث الجماعي التراكمي (تصفير المقروئية لـ True بطلب واحد)
+            Notification.objects.filter(meter_id=meter_id, isRead=False).update(isRead=True)
+            
+            serializer = NotificationSerializer(notifications, many=True)
+            return Response({
+                "status": "success",
+                "message": "تم استرداد سجل الإشعارات الداخلي وتعيين حالتها كـ مقروءة.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"خطأ أثناء استرجاع التنبيهات: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# 3. واجهة قراءة وتعديل تفضيلات الإشعارات للمستهلك (Notification Settings API)
+class NotificationSettingsAPIView(APIView):
+    def get(self, request, user_id):
+        try:
+            settings = NotificationSettings.objects.get(user_id=user_id)
+            serializer = NotificationSettingsUpdateSerializer(settings)
+            return Response({
+                "status": "success",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except NotificationSettings.DoesNotExist:
+            return Response({"message": "الإعدادات غير موجودة."}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, user_id):
+        try:
+            settings = NotificationSettings.objects.get(user_id=user_id)
+        except NotificationSettings.DoesNotExist:
+            return Response({"message": "الإعدادات غير موجودة."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = NotificationSettingsUpdateSerializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": "success",
+                "message": "تم حفظ تفضيلات وتصفية الإشعارات بنجاح.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
