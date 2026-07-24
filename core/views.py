@@ -4,9 +4,14 @@ from rest_framework import status
 from django.contrib.auth import authenticate
 from django.utils.timezone import make_aware
 from datetime import datetime
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework_simplejwt.tokens import RefreshToken # استيراد محرك توليد الـ Tokens
 
-# استيراد النماذج عند الحاجة فقط للاستعلامات البسيطة
-from .models import Notification, NotificationSettings, User, Meter
+# استيراد كلاسات الصلاحية المخصصة التي برمجناها
+from .permissions import IsAdminUserOnly, IsResidentUserOnly
+
+# استيراد النماذج والموديلات
+from .models import Notification, NotificationSettings, User, Meter, UserMeterPreference
 
 # استيراد عقود البيانات (الـ DTOs)
 from .serializers import (
@@ -17,7 +22,7 @@ from .serializers import (
     AssignMeterSerializer, UnassignMeterSerializer, TariffVersionCreateSerializer
 )
 
-# استيراد جميع الخدمات البرمجية المعزولة (The Service Layer)
+# استيراد الخدمات البرمجية المعزولة (The Service Layer)
 from core.services.user_service import UserService
 from core.services.meter_service import MeterService
 from core.services.association_service import AssociationService
@@ -31,14 +36,26 @@ from core.services.ingestion_service import IngestionService
 # ==================== 1. واجهات التحقق والمستخدم والملف الشخصي ====================
 
 class LoginAPIView(APIView):
+    permission_classes = [AllowAny] # واجهة الدخول مفتوحة عامة للجميع
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = authenticate(username=serializer.validated_data['username'], password=serializer.validated_data['password'])
             if user:
+                # توليد رموز الـ JWT المشفرة للمستخدم بنجاح
+                refresh = RefreshToken.for_user(user)
+                # إضافة صلاحيات المستخدم والاسم المشفر داخل هيكلية الـ Token لتأمينها سحابياً
+                refresh['role'] = user.role
+                refresh['fullName'] = user.fullName
+
                 return Response({
                     "status": "success",
-                    "message": "تم تسجيل الدخول بنجاح.",
+                    "message": "تم تسجيل الدخول وتوليد الـ Tokens بنجاح.",
+                    "tokens": {
+                        "refresh": str(refresh),
+                        "access": str(refresh.access_token),
+                    },
                     "user": {"id": user.id, "username": user.username, "fullName": user.fullName, "role": user.role}
                 }, status=status.HTTP_200_OK)
             return Response({"status": "error", "message": "اسم المستخدم أو كلمة المرور غير صحيحة."}, status=status.HTTP_401_UNAUTHORIZED)
@@ -46,27 +63,31 @@ class LoginAPIView(APIView):
 
 
 class ProfileUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated] # حماية إلزامية بتسجيل الدخول
+
     def post(self, request):
         serializer = ProfileUpdateSerializer(data=request.data)
         if serializer.is_valid():
-            username_to_update = request.data.get('username')
-            try:
-                user = User.objects.get(username=username_to_update)
-            except User.DoesNotExist:
-                return Response({"message": "المستخدم غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+            # أفضل ممارسة برمجية (Best Practice): جلب المستخدم الحالي تلقائياً من الـ Token لضمان الأمان المطلق
+            user = request.user 
 
-            # تحقق أمني
+            # تحقق أمني من كلمة المرور الحالية
             if not user.check_password(serializer.validated_data['currentPassword']):
                 return Response({"message": "كلمة المرور الحالية غير صحيحة."}, status=status.HTTP_401_UNAUTHORIZED)
 
-            # تفويض خدمة التعديل لطبقة الخدمات
             UserService.update_profile(user.id, serializer.validated_data['newPhone'], serializer.validated_data.get('newPassword'))
             return Response({"status": "success", "message": "تم تحديث بيانات الملف الشخصي بنجاح."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class NotificationSettingsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly] # تفتح للمستهلكين المنزليين المسجلين فقط
+
     def get(self, request, user_id):
+        # التحقق من أن المستخدم يطلب إعدادات حسابه هو فقط من الـ Token
+        if request.user.id != user_id:
+            return Response({"message": "عذراً، ليس لديك صلاحية تعديل حسابات مستخدمين آخرين."}, status=status.HTTP_403_FORBIDDEN)
+
         try:
             settings = NotificationSettings.objects.get(user_id=user_id)
             serializer = NotificationSettingsUpdateSerializer(settings)
@@ -75,10 +96,13 @@ class NotificationSettingsAPIView(APIView):
             return Response({"message": "الإعدادات غير موجودة."}, status=status.HTTP_404_NOT_FOUND)
 
     def post(self, request, user_id):
+        if request.user.id != user_id:
+            return Response({"message": "عذراً، ليس لديك صلاحية تعديل حسابات مستخدمين آخرين."}, status=status.HTTP_403_FORBIDDEN)
+
         try:
             settings = NotificationSettings.objects.get(user_id=user_id)
         except NotificationSettings.DoesNotExist:
-            return Response({"message": "الإعدادات غير موجودة."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"message": "الإعدادات غير موجودة."}, status=status.HTTP_4404_NOT_FOUND)
 
         serializer = NotificationSettingsUpdateSerializer(settings, data=request.data, partial=True)
         if serializer.is_valid():
@@ -90,7 +114,13 @@ class NotificationSettingsAPIView(APIView):
 # ==================== 2. واجهات الـ Dashboard والتحليلات والعدادات والـ Budget ====================
 
 class MeterDashboardAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly] # حماية المستهلك
+
     def get(self, request, meter_id):
+        # التحقق الأمني الثنائي: هل العداد المطلوب مسند ومرتبط فعلياً بحساب المستخدم الحالي المشفّر بالـ Token؟
+        if not UserMeterPreference.objects.filter(user=request.user, meter_id=meter_id).exists():
+            return Response({"status": "error", "message": "عذراً، ليس لديك الصلاحية الأمنية للوصول لبيانات هذا العداد الكهربائي."}, status=status.HTTP_403_FORBIDDEN)
+
         simulated_date = request.query_params.get('simulated_date', None)
         try:
             dashboard_data = DashboardService.get_dashboard_data(meter_id, simulated_date)
@@ -101,7 +131,12 @@ class MeterDashboardAPIView(APIView):
 
 
 class MeterAnalyticsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly]
+
     def get(self, request, meter_id):
+        if not UserMeterPreference.objects.filter(user=request.user, meter_id=meter_id).exists():
+            return Response({"status": "error", "message": "عذراً، ليس لديك الصلاحية الأمنية للوصول لبيانات هذا العداد الكهربائي."}, status=status.HTTP_403_FORBIDDEN)
+
         simulated_date = request.query_params.get('simulated_date', None)
         try:
             analytics_data = AnalyticsService.get_analytics_data(meter_id, simulated_date)
@@ -112,7 +147,12 @@ class MeterAnalyticsAPIView(APIView):
 
 
 class NotificationLogAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly]
+
     def get(self, request, meter_id):
+        if not UserMeterPreference.objects.filter(user=request.user, meter_id=meter_id).exists():
+            return Response({"status": "error", "message": "عذراً، ليس لديك الصلاحية الأمنية للوصول لبيانات هذا العداد الكهربائي."}, status=status.HTTP_403_FORBIDDEN)
+
         try:
             notifications = Notification.objects.filter(meter_id=meter_id).order_by('-timestamp')
             Notification.objects.filter(meter_id=meter_id, isRead=False).update(isRead=True)
@@ -123,24 +163,37 @@ class NotificationLogAPIView(APIView):
 
 
 class UserMeterPreferenceAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly]
+
     def put(self, request, preference_id):
         serializer = UserMeterPreferenceUpdateSerializer(data=request.data, partial=True)
         if serializer.is_valid():
             try:
-                # تفويض خدمة التفضيلات المخصصة لطبقة الخدمات
+                # التحقق الأمني من أن سجل التفضيل ينتمي للمستخدم الحالي نفسه
+                pref_check = UserMeterPreference.objects.get(pk=preference_id)
+                if pref_check.user != request.user:
+                    return Response({"message": "عذراً، ليس لديك صلاحية تعديل تفضيلات عداد لمستخدم آخر."}, status=status.HTTP_403_FORBIDDEN)
+
                 pref = MeterService.update_user_meter_preference(
                     preference_id, 
                     serializer.validated_data.get('alias'), 
                     serializer.validated_data.get('isDefault')
                 )
                 return Response({"status": "success", "message": "تم تحديث تفضيلات العداد بنجاح.", "data": UserMeterPreferenceUpdateSerializer(pref).data}, status=status.HTTP_200_OK)
+            except UserMeterPreference.DoesNotExist:
+                return Response({"message": "السجل غير موجود."}, status=status.HTTP_404_NOT_FOUND)
             except Exception as e:
                 return Response({"message": f"خطأ داخلي: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SetBudgetAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsResidentUserOnly]
+
     def post(self, request, meter_id):
+        if not UserMeterPreference.objects.filter(user=request.user, meter_id=meter_id).exists():
+            return Response({"status": "error", "message": "عذراً، ليس لديك الصلاحية الأمنية للوصول لبيانات هذا العداد الكهربائي."}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = BudgetSerializer(data=request.data)
         if serializer.is_valid():
             try:
@@ -151,9 +204,11 @@ class SetBudgetAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== 3. واجهات إنترنت الأشياء واستقبال الاستهلاك للعداد الذكي ====================
+# ==================== 3. واجهات إنترنت الأشياء (مفتوحة حالياً للتبسيط) ====================
 
 class ConsumptionUpdateAPIView(APIView):
+    permission_classes = [AllowAny] # مفتوحة حالياً للتبسيط بانتظام العتاد المادي
+
     def post(self, request, meter_id):
         serializer = ConsumptionUpdateSerializer(data=request.data)
         if serializer.is_valid():
@@ -162,11 +217,13 @@ class ConsumptionUpdateAPIView(APIView):
                 reading = IngestionService.process_live_reading(meter_id, serializer.validated_data['watts'], dt)
                 return Response({"status": "success", "message": "تم استلام القراءة اللحظية وتراكمها بنجاح.", "data": {"readingId": reading.readingId, "cumulativeWh": reading.cumulativeWh, "timestamp": reading.timestamp.strftime("%Y-%m-%d %H:%M:%S")}}, status=status.HTTP_201_CREATED)
             except Exception as e:
-                return Response({"status": "error", "message": f"خطأ برمي أثناء الاستقبال: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({"status": "error", "message": f"خطأ برمجي أثناء الاستقبال: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class BulkIngestionAPIView(APIView):
+    permission_classes = [AllowAny] # مفتوحة للحقن التأسيسي الأول للمحاكي
+
     def post(self, request, meter_id):
         serializer = BulkIngestionSerializer(data=request.data)
         if serializer.is_valid():
@@ -178,9 +235,11 @@ class BulkIngestionAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# ==================== 4. واجهات الإدارة لمدير النظام (Admin CRUDs) ====================
+# ==================== 4. واجهات الإدارة لمدير النظام (Admin Users Only) ====================
 
 class AdminCreateUserAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly] # حظر وحماية للأدمن المسجل فقط
+
     def post(self, request):
         serializer = UserCreationSerializer(data=request.data)
         if serializer.is_valid():
@@ -190,6 +249,8 @@ class AdminCreateUserAPIView(APIView):
 
 
 class AdminUserDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def put(self, request, user_id):
         try:
             user = UserService.update_user_account(user_id, request.data.get('fullName'), request.data.get('phoneNumber'))
@@ -206,6 +267,8 @@ class AdminUserDetailAPIView(APIView):
 
 
 class AdminMeterListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def post(self, request):
         meter_id_raw = request.data.get('meterId', None)
         if not meter_id_raw:
@@ -218,6 +281,8 @@ class AdminMeterListCreateAPIView(APIView):
 
 
 class AdminMeterDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def delete(self, request, meter_id):
         try:
             MeterService.delete_meter(meter_id)
@@ -227,6 +292,8 @@ class AdminMeterDetailAPIView(APIView):
 
 
 class AdminMeterAssociationAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def post(self, request):
         serializer = AssignMeterSerializer(data=request.data)
         if serializer.is_valid():
@@ -239,6 +306,8 @@ class AdminMeterAssociationAPIView(APIView):
 
 
 class AdminMeterUnassignmentAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def post(self, request):
         serializer = UnassignMeterSerializer(data=request.data)
         if serializer.is_valid():
@@ -251,6 +320,8 @@ class AdminMeterUnassignmentAPIView(APIView):
 
 
 class AdminTariffUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def post(self, request):
         serializer = TariffVersionCreateSerializer(data=request.data)
         if serializer.is_valid():
@@ -260,24 +331,20 @@ class AdminTariffUpdateAPIView(APIView):
             except Exception as e:
                 return Response({"message": f"تعذر التحديث: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
 
-# أضف هذا الكود في نهاية ملف core/views.py لتمثيل واجهة محاكاة عمليات منتصف الليل يدوياً
-
-from core.services.task_service import TaskService
 
 class AdminTriggerDailyTasksAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
     def post(self, request, meter_id):
-        # استقبال تاريخ اليوم المراد تشغيل محاكاة منتصف الليل له (مثل: "2026-07-23")
         target_date_str = request.data.get('date', None)
         if not target_date_str:
             return Response({"message": "يرجى تحديد تاريخ المحاكاة المستهدف."}, status=status.HTTP_400_BAD_REQUEST)
             
         try:
             target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-            # 1. تشغيل التنبؤ اليومي وكشف خلل الأمس تلقائياً
+            from core.services.task_service import TaskService
             forecast = TaskService.run_daily_prediction_and_anomaly_detection(meter_id, target_date)
-            # 2. تشغيل توليد الإشعارات التكيفية اليومية
             TaskService.run_daily_adaptive_notifications(meter_id, target_date)
             
             return Response({
@@ -285,7 +352,7 @@ class AdminTriggerDailyTasksAPIView(APIView):
                 "message": f"تمت محاكاة وتشغيل مهام منتصف الليل بنجاح للتاريخ {target_date_str}.",
                 "data": {
                     "isAnomalousDetected": forecast.isAnomalous,
-                    "deviationKWh": forecast.deviationAmountKWh
+                    "deviationKWh": float(forecast.deviationAmountKWh)
                 }
             }, status=status.HTTP_200_OK)
         except Exception as e:

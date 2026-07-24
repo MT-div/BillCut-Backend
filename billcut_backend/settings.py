@@ -124,3 +124,25 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'core.User'
+
+
+# أضف هذه الإعدادات في نهاية ملف billcut_backend/settings.py تماماً لتفعيل محرك الـ JWT والأمان
+
+from datetime import timedelta
+
+# 1. إخبار مكتبة REST باعتماد الـ JWT كمحرك المصادقة الرسمي للمشروع
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+# 2. ضبط معايير وإعدادات تشفير المفاتيح وأوقات الصلاحية (Access & Refresh Tokens)
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),        # صلاحية الـ Access Token ساعة واحدة
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),         # صلاحية الـ Refresh Token سبعة أيام
+    'ROTATE_REFRESH_TOKENS': True,                       # تجديد المفتاح التحديثي عند كل استدعاء لقفل الاختراق
+    'ALGORITHM': 'HS256',                                # خوارزمية التوقيع والتشفير القياسية
+    'SIGNING_KEY': SECRET_KEY,                           # استخدام المفتاح السري للسيرفر للتشفير
+    'AUTH_HEADER_TYPES': ('Bearer',),                    # نوع الـ Token المرسل في الـ Header (Bearer Token)
+}
