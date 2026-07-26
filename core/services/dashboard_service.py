@@ -209,7 +209,9 @@ class DashboardService:
             "cycleRemainingDays": static_data['cycleRemainingDays'],
             "cycleStartDate": static_data['cycleStartDate'],
             "cycleEndDate": static_data['cycleEndDate'],
+            "budgetLimitKWh": static_data['budgetLimitKWh'],
             "supportLimitKWh": static_data['supportLimitKWh'],
+            "predictedCycleConsumptionKWh": static_data['predictedCycleConsumptionKWh'],
             "cycleActualConsumptionKWh": float(cycle_consumption_kwh),
             "accumulatedCostSYP": int(accumulated_cost_syp), # تحويل لـ Integer لإلغاء الفواصل المالية
             "predictedBillSYP": static_data['predictedBillSYP'],
