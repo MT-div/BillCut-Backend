@@ -162,16 +162,30 @@ class DashboardService:
                 # محاكاة الاستهلاك المتوقع للدورة في حال عدم وجوده
                 predicted_cycle_kwh = Decimal('445.90')
 
+            # ابحث عن كلاس get_dashboard_data في ملف core/services/dashboard_service.py وقم بتحديث الـ static_data كالتالي:
+
+            # جلب حد الميزانية الفعلي المخزن
+            budget_limit = Decimal('0.00')
+            try:
+                budget = Budget.objects.get(meter=meter)
+                budget_limit = budget.equivalentLimitKWh
+                avg_budget_target_kwh = round((budget.equivalentLimitKWh - yesterday_consumption_kwh) / div_days, 2)
+                if avg_budget_target_kwh < 0:
+                    avg_budget_target_kwh = Decimal('0.00')
+            except ObjectDoesNotExist:
+                pass
+
             static_data = {
                 "cycleProgressDays": days_passed,
                 "cycleRemainingDays": days_remaining,
                 "cycleStartDate": cycle_start_date.strftime("%Y-%m-%d"),
                 "cycleEndDate": cycle_end_date.strftime("%Y-%m-%d"),
                 "supportLimitKWh": float(support_limit),
+                "budgetLimitKWh": float(budget_limit), # إرسال حد الميزانية الفعلي ديناميكياً
                 "startReadingWh": float(start_reading.cumulativeWh) if start_reading else 0.0,
                 "yesterdayEndReadingWh": float(yesterday_end_wh),
                 "predictedBillSYP": int(predicted_bill_syp),
-                "predictedCycleConsumptionKWh": float(predicted_cycle_kwh), # القيمة التنبؤية الجديدة المضافة لـ ك.و.س
+                "predictedCycleConsumptionKWh": float(predicted_cycle_kwh),
                 "todayPredictedKWh": float(today_predicted_kwh),
                 "avgSubTargetKWh": float(avg_sub_target_kwh),
                 "avgBudgetTargetKWh": float(avg_budget_target_kwh)
