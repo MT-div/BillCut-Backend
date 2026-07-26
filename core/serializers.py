@@ -46,7 +46,8 @@ class MeterPreferenceSerializer(serializers.ModelSerializer):
 class BudgetSerializer(serializers.Serializer):
     targetBudgetSYP = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1.0)
 
-# أضف هذا الكود في نهاية ملف core/serializers.py تماماً لتوثيق الـ DTO الخاص بالـ Dashboard
+
+
 
 class DashboardResponseSerializer(serializers.Serializer):
     meterId = serializers.UUIDField()
@@ -55,15 +56,15 @@ class DashboardResponseSerializer(serializers.Serializer):
     cycleRemainingDays = serializers.IntegerField()
     cycleStartDate = serializers.DateField()
     cycleEndDate = serializers.DateField()
+    supportLimitKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
     cycleActualConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    accumulatedCostSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
-    predictedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
+    accumulatedCostSYP = serializers.IntegerField()
+    predictedBillSYP = serializers.IntegerField()
+    predictedCycleConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2) # الحقل التنبئي الجديد بالـ kWh
     todayActualKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
     todayPredictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
     avgSubTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
     avgBudgetTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-
-# أضف هذا الأكواد في نهاية ملف core/serializers.py لتوثيق الـ DTOs الجدد لاستقبال الاستهلاك والحقن
 
 # 7. DTO الخاص باستقبال قراءة العداد بالواط اللحظي والتوقيت
 class ConsumptionUpdateSerializer(serializers.Serializer):

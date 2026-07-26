@@ -35,19 +35,22 @@ from core.services.ingestion_service import IngestionService
 
 # ==================== 1. واجهات التحقق والمستخدم والملف الشخصي ====================
 
+
 class LoginAPIView(APIView):
-    permission_classes = [AllowAny] # واجهة الدخول مفتوحة عامة للجميع
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = authenticate(username=serializer.validated_data['username'], password=serializer.validated_data['password'])
             if user:
-                # توليد رموز الـ JWT المشفرة للمستخدم بنجاح
                 refresh = RefreshToken.for_user(user)
-                # إضافة صلاحيات المستخدم والاسم المشفر داخل هيكلية الـ Token لتأمينها سحابياً
                 refresh['role'] = user.role
                 refresh['fullName'] = user.fullName
+
+                # جلب معرّف العداد الافتراضي للمستخدم ديناميكياً من قاعدة البيانات لمنع جمود الكود
+                default_pref = UserMeterPreference.objects.filter(user=user, isDefault=True).first()
+                default_meter_id = str(default_pref.meter.meterId) if default_pref else None
 
                 return Response({
                     "status": "success",
@@ -56,11 +59,16 @@ class LoginAPIView(APIView):
                         "refresh": str(refresh),
                         "access": str(refresh.access_token),
                     },
-                    "user": {"id": user.id, "username": user.username, "fullName": user.fullName, "role": user.role}
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "fullName": user.fullName,
+                        "role": user.role,
+                        "defaultMeterId": default_meter_id # يرسل تلقائياً للموبايل
+                    }
                 }, status=status.HTTP_200_OK)
             return Response({"status": "error", "message": "اسم المستخدم أو كلمة المرور غير صحيحة."}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class ProfileUpdateAPIView(APIView):
     permission_classes = [IsAuthenticated] # حماية إلزامية بتسجيل الدخول
