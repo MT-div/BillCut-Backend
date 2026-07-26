@@ -154,21 +154,50 @@ class MeterAnalyticsAPIView(APIView):
             return Response({"status": "error", "message": f"تعذر جلب البيانات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+
+from rest_framework.pagination import LimitOffsetPagination # استيراد مكتبة الترقيم القياسية
+
 class NotificationLogAPIView(APIView):
     permission_classes = [IsAuthenticated, IsResidentUserOnly]
 
     def get(self, request, meter_id):
+        # التحقق الأمني من ملكية العداد للمستخدم الحالي المشفّر بالتوكن
         if not UserMeterPreference.objects.filter(user=request.user, meter_id=meter_id).exists():
             return Response({"status": "error", "message": "عذراً، ليس لديك الصلاحية الأمنية للوصول لبيانات هذا العداد الكهربائي."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            notifications = Notification.objects.filter(meter_id=meter_id).order_by('-timestamp')
-            Notification.objects.filter(meter_id=meter_id, isRead=False).update(isRead=True)
-            serializer = NotificationSerializer(notifications, many=True)
-            return Response({"status": "success", "message": "تم استرداد السجل وتحديث القراءة.", "data": serializer.data}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"status": "error", "message": f"خطأ أثناء استرجاع التنبيهات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # جلب كائنات الإشعارات مرتبة تنازلياً
+            queryset = Notification.objects.filter(meter_id=meter_id).order_by('-timestamp')
+            
+            # تأسيس وتطبيق الترقيم التلقائي (Limit-Offset Pagination)
+            paginator = LimitOffsetPagination()
+            paginator.default_limit = 10 # تحميل 10 إشعارات فقط في كل سحبة صفحة كحد أقصى مريح لـ Expo
+            
+            page = paginator.paginate_queryset(queryset, request, view=self)
+            
+            if page is not None:
+                # ميزة ذكية وأكاديمية فائقة الاحترافية:
+                # استخلاص معرفات الإشعارات غير المقروءة المتواجدة في الصفحة الحالية فقط وتحديث حالتها لمقروءة
+                unread_ids = [n.notificationId for n in page if not n.isRead]
+                if unread_ids:
+                    Notification.objects.filter(notificationId__in=unread_ids).update(isRead=True)
+                
+                serializer = NotificationSerializer(page, many=True)
+                # إرجاع رد الترقيم القياسي المدمج (يحتوي على count, next, previous, results)
+                return paginator.get_paginated_response(serializer.data)
 
+            # حزام أمان في حال فشل الترقيم يرجع البيانات كاملة
+            serializer = NotificationSerializer(queryset, many=True)
+            return Response({
+                "status": "success",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"خطأ أثناء استرجاع التنبيهات: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class UserMeterPreferenceAPIView(APIView):
     permission_classes = [IsAuthenticated, IsResidentUserOnly]
