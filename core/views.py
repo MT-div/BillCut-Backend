@@ -370,6 +370,7 @@ class AdminTariffUpdateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class AdminTriggerDailyTasksAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
@@ -381,15 +382,20 @@ class AdminTriggerDailyTasksAPIView(APIView):
         try:
             target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
             from core.services.task_service import TaskService
+            
+            # 1. تشغيل التنبؤ اليومي وكشف خلل الأمس وحساب قيمته الفعلية بدقة
             forecast = TaskService.run_daily_prediction_and_anomaly_detection(meter_id, target_date)
-            TaskService.run_daily_adaptive_notifications(meter_id, target_date)
+            
+            # 2. تمرير القيمة الفعلية المستنتجة بدقة كمعامل ذكي لحل التداخل الحسابي
+            TaskService.run_daily_adaptive_notifications(meter_id, target_date, forecast.actualConsumptionKWh)
             
             return Response({
                 "status": "success",
                 "message": f"تمت محاكاة وتشغيل مهام منتصف الليل بنجاح للتاريخ {target_date_str}.",
                 "data": {
                     "isAnomalousDetected": forecast.isAnomalous,
-                    "deviationKWh": float(forecast.deviationAmountKWh)
+                    "deviationKWh": float(forecast.deviationAmountKWh),
+                    "yesterdayActualKWh": float(forecast.actualConsumptionKWh) # إرجاع القيمة للتأكيد البصري للفحص
                 }
             }, status=status.HTTP_200_OK)
         except Exception as e:
