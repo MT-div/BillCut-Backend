@@ -1,5 +1,8 @@
 from core.models import Meter, UserMeterPreference
 
+
+from django.core.cache import cache # استيراد الكاش
+
 class MeterService:
 
     @staticmethod
@@ -20,9 +23,12 @@ class MeterService:
             
         if is_default is not None:
             if is_default:
-                # تصفير الافتراضي عن بقية عدادات هذا المستخدم أولاً
                 UserMeterPreference.objects.filter(user=pref.user).update(isDefault=False)
             pref.isDefault = is_default
             
         pref.save()
+
+        # حل مشكلة الكاش: تصفير الكاش السريع فوراً بمجرد تعديل اسم العداد أو حالته الافتراضية
+        cache.clear()
+        
         return pref
