@@ -36,6 +36,7 @@ class ProfileUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"confirmPassword": "كلمتا المرور الجديدتان غير متطابقتين."})
         return data
 
+
 # 5. DTO الخاص بإدارة وتخصيص تفضيلات العداد للمستخدم
 class MeterPreferenceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -145,3 +146,25 @@ class TariffTierInputSerializer(serializers.Serializer):
 class TariffVersionCreateSerializer(serializers.Serializer):
     effectiveDate = serializers.DateField(required=True)
     tiers = serializers.ListField(child=TariffTierInputSerializer(), allow_empty=False)
+
+
+
+class PhoneUpdateSerializer(serializers.Serializer):
+    newPhone = serializers.CharField(max_length=20)
+    currentPassword = serializers.CharField(write_only=True)
+ 
+    def validate_newPhone(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("رقم الهاتف مطلوب.")
+        # مثال بسيط للتحقق من صيغة الرقم - عدّل النمط حسب صيغ الأرقام المدعومة محلياً
+        # if not cleaned.replace("+", "").isdigit():
+        #     raise serializers.ValidationError("صيغة رقم الهاتف غير صحيحة.")
+        return cleaned
+ 
+ 
+class PasswordUpdateSerializer(serializers.Serializer):
+    currentPassword = serializers.CharField(write_only=True)
+    newPassword = serializers.CharField(write_only=True, min_length=8)
+    confirmPassword = serializers.CharField(write_only=True)
+ 

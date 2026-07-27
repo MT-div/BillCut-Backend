@@ -132,6 +132,9 @@ from datetime import timedelta
 
 # 1. إخبار مكتبة REST باعتماد الـ JWT كمحرك المصادقة الرسمي للمشروع
 REST_FRAMEWORK = {
+     'DEFAULT_THROTTLE_RATES': {
+        'sensitive_action': '5/min',  # هنا تحدد عدد المحاولات (مثلاً: 5 محاولات في الدقيقة)
+    },
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),

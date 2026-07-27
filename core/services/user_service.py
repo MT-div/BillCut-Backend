@@ -38,10 +38,30 @@ class UserService:
         user = User.objects.get(pk=user_id, role='RESIDENT')
         user.delete() # الحذف المتتالي سيتكفل بالباقي
 
+
+    @staticmethod
+    def update_phone(user_id: int, new_phone: str) -> User:
+        user = User.objects.get(pk=user_id)
+        user.phoneNumber = new_phone
+        user.username = f"user_{new_phone[-10:]}"
+        user.save()
+        return user
+
+    @staticmethod
+    def update_password(user_id: int, new_password: str) -> User:
+        user = User.objects.get(pk=user_id)
+        user.set_password(new_password)
+        user.save()
+        return user
+    
     @staticmethod
     def update_profile(user_id: int, new_phone: str, new_password: str = None) -> User:
         user = User.objects.get(pk=user_id)
         user.phoneNumber = new_phone
+        
+        # مزامنة وتحديث اسم المستخدم (Username) تلقائياً ليتوافق مع الهاتف الجديد لمنع أي تضارب أمني
+        user.username = f"user_{new_phone[-10:]}"
+        
         if new_password:
             user.set_password(new_password)
         user.save()

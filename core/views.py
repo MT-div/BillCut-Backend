@@ -15,7 +15,7 @@ from .models import Notification, NotificationSettings, User, Meter, UserMeterPr
 
 # استيراد عقود البيانات (الـ DTOs)
 from .serializers import (
-    LoginSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
+    LoginSerializer, PasswordUpdateSerializer, PhoneUpdateSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
     BudgetSerializer, DashboardResponseSerializer, ConsumptionUpdateSerializer, 
     BulkIngestionSerializer, AnalyticsResponseSerializer, NotificationSerializer, 
     NotificationSettingsUpdateSerializer, UserMeterPreferenceUpdateSerializer, 
@@ -86,6 +86,7 @@ class ProfileUpdateAPIView(APIView):
             UserService.update_profile(user.id, serializer.validated_data['newPhone'], serializer.validated_data.get('newPassword'))
             return Response({"status": "success", "message": "تم تحديث بيانات الملف الشخصي بنجاح."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class NotificationSettingsAPIView(APIView):
@@ -400,3 +401,107 @@ class AdminTriggerDailyTasksAPIView(APIView):
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"message": f"خطأ تشغيلي: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+from rest_framework.throttling import UserRateThrottle
+
+
+class SensitiveActionThrottle(UserRateThrottle):
+    """
+    Throttle مخصص للعمليات الحساسة أمنياً (تغيير هاتف / كلمة مرور)
+    يمنع محاولات القوة الغاشمة (brute force) على check_password.
+    تأكد من إضافة "sensitive_action" لإعدادات DEFAULT_THROTTLE_RATES في settings.py
+    مثال: "sensitive_action": "5/min"
+    """
+    scope = "sensitive_action"
+
+
+
+class PhoneUpdateAPIView(APIView):
+    """
+    Endpoint مستقل تماماً لتحديث رقم الهاتف فقط.
+    كان سابقاً مدمجاً مع تحديث كلمة المرور بنفس الـ serializer وهذا كان
+    يسبب تعارضاً في متطلبات الحقول (validation) بين حالتين مختلفتين منطقياً.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [SensitiveActionThrottle]
+
+    def post(self, request):
+        serializer = PhoneUpdateSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+
+            if not user.check_password(
+                serializer.validated_data["currentPassword"]
+            ):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "كلمة المرور الحالية غير صحيحة.",
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            UserService.update_phone(
+                user.id, serializer.validated_data["newPhone"]
+            )
+            return Response(
+                {
+                    "status": "success",
+                    "message": "تم تحديث رقم الهاتف بنجاح.",
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordUpdateAPIView(APIView):
+    """
+    Endpoint مستقل تماماً لتحديث كلمة المرور فقط.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [SensitiveActionThrottle]
+
+    def post(self, request):
+        serializer = PasswordUpdateSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+
+            if not user.check_password(
+                serializer.validated_data["currentPassword"]
+            ):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "كلمة المرور الحالية غير صحيحة.",
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            # تحقق مطابقة كلمة المرور الجديدة وتأكيدها على مستوى الخادم أيضاً
+            # (لا يكفي التحقق في الفرونت إند فقط)
+            if (
+                serializer.validated_data["newPassword"]
+                != serializer.validated_data["confirmPassword"]
+            ):
+                return Response(
+                    {
+                        "status": "error",
+                        "message": "كلمة المرور الجديدة وتأكيدها غير متطابقين.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            UserService.update_password(
+                user.id, serializer.validated_data["newPassword"]
+            )
+            return Response(
+                {
+                    "status": "success",
+                    "message": "تم تحديث كلمة المرور بنجاح.",
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

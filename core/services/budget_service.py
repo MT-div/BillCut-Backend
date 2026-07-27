@@ -57,13 +57,9 @@ class BudgetService:
 
     @classmethod
     def set_or_update_budget(cls, meter_id: str, target_budget: Decimal) -> Budget:
-        """
-        خدمة حفظ وتحديث ميزانية العداد وحساب استهلاكه المعادل
-        """
         meter = Meter.objects.get(pk=meter_id)
         equivalent_limit = cls.calculate_equivalent_kwh(target_budget)
 
-        # حفظ أو تحديث السجل باستخدام django update_or_create
         budget, created = Budget.objects.update_or_create(
             meter=meter,
             defaults={
@@ -71,4 +67,9 @@ class BudgetService:
                 'equivalentLimitKWh': equivalent_limit
             }
         )
+        
+        # حل مشكلة جمود الكاش: تصفير الكاش السريع فوراً لإجبار السيرفر على إعادة الحساب اللحظي المحدث للـ Dashboard
+        from django.core.cache import cache
+        cache.clear()
+        
         return budget

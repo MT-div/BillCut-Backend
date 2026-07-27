@@ -17,7 +17,9 @@ from .views import (
     NotificationSettingsAPIView, 
     ProfileUpdateAPIView, 
     SetBudgetAPIView,
-    UserMeterPreferenceAPIView
+    UserMeterPreferenceAPIView,
+    PasswordUpdateAPIView,
+    PhoneUpdateAPIView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -28,6 +30,9 @@ urlpatterns = [
     path('auth/login/', LoginAPIView.as_view(), name='api_login'),
     path('user/profile/update/', ProfileUpdateAPIView.as_view(), name='api_profile_update'),
     path('user/<int:user_id>/notification_settings/', NotificationSettingsAPIView.as_view(), name='api_notification_settings'),
+    
+    path("user/phone/update/", PhoneUpdateAPIView.as_view(), name="phone-update"),
+    path("user/password/update/", PasswordUpdateAPIView.as_view(), name="password-update"),
     
     # 2. روابط الـ Dashboard والتحليلات والعدادات الخاصة بالمشترك
     path('meter/<uuid:meter_id>/dashboard/', MeterDashboardAPIView.as_view(), name='api_meter_dashboard'),
