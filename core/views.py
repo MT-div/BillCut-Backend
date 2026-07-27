@@ -36,6 +36,8 @@ from core.services.ingestion_service import IngestionService
 # ==================== 1. واجهات التحقق والمستخدم والملف الشخصي ====================
 
 
+# ابحث عن كلاس LoginAPIView في ملف core/views.py واستبدله كالتالي لإرجاع قائمة عدادات المستخدم ديناميكياً:
+
 class LoginAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -48,9 +50,20 @@ class LoginAPIView(APIView):
                 refresh['role'] = user.role
                 refresh['fullName'] = user.fullName
 
-                # جلب معرّف العداد الافتراضي للمستخدم ديناميكياً من قاعدة البيانات لمنع جمود الكود
+                # 1. جلب العداد الافتراضي للمستخدم
                 default_pref = UserMeterPreference.objects.filter(user=user, isDefault=True).first()
                 default_meter_id = str(default_pref.meter.meterId) if default_pref else None
+
+                # 2. جلب جميع العدادات المرتبطة بحساب هذا المستخدم ديناميكياً لتغذية مبدل العدادات
+                user_prefs = UserMeterPreference.objects.filter(user=user)
+                meters_list = [
+                    {
+                        "preferenceId": p.id,
+                        "meterId": str(p.meter.meterId),
+                        "alias": p.alias,
+                        "isDefault": p.isDefault
+                    } for p in user_prefs
+                ]
 
                 return Response({
                     "status": "success",
@@ -64,12 +77,12 @@ class LoginAPIView(APIView):
                         "username": user.username,
                         "fullName": user.fullName,
                         "role": user.role,
-                        "defaultMeterId": default_meter_id # يرسل تلقائياً للموبايل
+                        "defaultMeterId": default_meter_id,
+                        "meters": meters_list  # إرسال قائمة العدادات التفضيلية ديناميكياً
                     }
                 }, status=status.HTTP_200_OK)
             return Response({"status": "error", "message": "اسم المستخدم أو كلمة المرور غير صحيحة."}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class ProfileUpdateAPIView(APIView):
     permission_classes = [IsAuthenticated] # حماية إلزامية بتسجيل الدخول
 
