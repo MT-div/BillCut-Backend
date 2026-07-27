@@ -110,11 +110,21 @@ class AnalyticsResponseSerializer(serializers.Serializer):
     dailyHistory = serializers.ListField(child=DailyHistoryItemSerializer())
 
 # 10. DTO الخاص باسترجاع وعرض قائمة الإشعارات لمركز التنبيهات
+
 class NotificationSerializer(serializers.ModelSerializer):
+    meterAlias = serializers.SerializerMethodField() # الحقل التفضيل الديناميكي الجديد
+
     class Meta:
         model = Notification
-        fields = ['notificationId', 'title', 'message', 'type', 'isRead', 'timestamp']
+        fields = ['notificationId', 'title', 'message', 'type', 'isRead', 'timestamp', 'meterAlias']
 
+    def get_meterAlias(self, obj):
+        # قراءة المستخدم الموثق بـ Token الطلب وجلب الاسم المستعار المخصص منه للعداد
+        request = self.context.get('request')
+        if request and request.user:
+            pref = UserMeterPreference.objects.filter(user=request.user, meter=obj.meter).first()
+            return pref.alias if pref else "عداد غير معروف"
+        return "عداد غير معروف"
 # 11. DTO الخاص بتحديث تفضيلات الإشعارات للمستهلك
 class NotificationSettingsUpdateSerializer(serializers.ModelSerializer):
     class Meta:

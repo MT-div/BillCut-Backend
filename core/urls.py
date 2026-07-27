@@ -37,7 +37,7 @@ urlpatterns = [
     # 2. روابط الـ Dashboard والتحليلات والعدادات الخاصة بالمشترك
     path('meter/<uuid:meter_id>/dashboard/', MeterDashboardAPIView.as_view(), name='api_meter_dashboard'),
     path('meter/<uuid:meter_id>/analytics/', MeterAnalyticsAPIView.as_view(), name='api_meter_analytics'),
-    path('meter/<uuid:meter_id>/notifications/', NotificationLogAPIView.as_view(), name='api_notifications_log'),
+    path('user/notifications/', NotificationLogAPIView.as_view(), name='api_notifications_log'),
     path('user/meter/preferences/<int:preference_id>/', UserMeterPreferenceAPIView.as_view(), name='api_user_meter_preference'),
     path('meter/<uuid:meter_id>/budget/set/', SetBudgetAPIView.as_view(), name='api_set_budget'),
     
