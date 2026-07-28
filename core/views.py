@@ -19,7 +19,7 @@ from .serializers import (
     BudgetSerializer, DashboardResponseSerializer, ConsumptionUpdateSerializer, 
     BulkIngestionSerializer, AnalyticsResponseSerializer, NotificationSerializer, 
     NotificationSettingsUpdateSerializer, UserMeterPreferenceUpdateSerializer, 
-    AssignMeterSerializer, UnassignMeterSerializer, TariffVersionCreateSerializer
+    AssignMeterSerializer, UnassignMeterSerializer, TariffVersionCreateSerializer, UserSerializer
 )
 
 # استيراد الخدمات البرمجية المعزولة (The Service Layer)
@@ -284,17 +284,28 @@ class BulkIngestionAPIView(APIView):
 
 # ==================== 4. واجهات الإدارة لمدير النظام (Admin Users Only) ====================
 
+# ابحث عن كلاس AdminCreateUserAPIView في ملف core/views.py واستبدله كالتالي لدعم استرجاع قائمة المستخدمين:
+
 class AdminCreateUserAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly] # حظر وحماية للأدمن المسجل فقط
+    permission_classes = [IsAuthenticated, IsAdminUserOnly] # حماية للأدمن فقط
+
+    def get(self, request):
+        # [UC_13 -> Read] جلب جميع المستخدمين المسجلين كـ مستهلكين من قاعدة البيانات مرتبين من الأحدث للأقدم
+        users = User.objects.filter(role='RESIDENT').order_by('-createdAt')
+        serializer = UserSerializer(users, many=True)
+        return Response({
+            "status": "success",
+            "message": "تم استرداد قائمة المستهلكين بنجاح.",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
 
     def post(self, request):
+        # [UC_13 -> Create] الإبقاء على كود إنشاء المستخدم السابق كما هو تماماً تحتها...
         serializer = UserCreationSerializer(data=request.data)
         if serializer.is_valid():
             user, temp_password = UserService.create_resident_user(serializer.validated_data['fullName'], serializer.validated_data['phoneNumber'])
             return Response({"status": "success", "message": "تم إنشاء الحساب بنجاح.", "data": {"username": user.username, "fullName": user.fullName, "phoneNumber": user.phoneNumber, "temporaryPassword": temp_password}}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 class AdminUserDetailAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 

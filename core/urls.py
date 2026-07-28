@@ -49,7 +49,8 @@ urlpatterns = [
     # 4. روابط إدارة حسابات المستخدمين والـ CRUD لمدير النظام (Admin)
     path('admin/users/create/', AdminCreateUserAPIView.as_view(), name='api_admin_create_user'),
     path('admin/users/<int:user_id>/', AdminUserDetailAPIView.as_view(), name='api_admin_user_detail'),
-    
+    path('admin/stats/', AdminStatsAPIView.as_view(), name='api_admin_stats'),
+
     # 5. روابط إدارة العدادات والـ CRUD للأجهزة لمدير النظام (Admin)
     path('admin/meters/create/', AdminMeterListCreateAPIView.as_view(), name='api_admin_meter_create'),
     path('admin/meters/<uuid:meter_id>/', AdminMeterDetailAPIView.as_view(), name='api_admin_meter_detail'),
