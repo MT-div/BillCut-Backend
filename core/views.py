@@ -357,17 +357,48 @@ class AdminMeterListCreateAPIView(APIView):
             return Response({"message": f"تعذر الإضافة: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class AdminMeterDetailAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
+    def put(self, request, meter_id):
+        # [UC_14 -> Update] تعديل بيانات العداد (مثل معرّفه الفيزيائي) من الأدمن
+        new_meter_id = request.data.get('newMeterId', None)
+        if not new_meter_id:
+            return Response({"message": "يرجى تحديد المعرّف الفيزيائي الجديد للعداد."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            meter = Meter.objects.get(pk=meter_id)
+            # التأكد من أن المعرف الجديد ليس مسجلاً لعداد آخر نشط
+            if Meter.objects.filter(pk=new_meter_id).exclude(pk=meter_id).exists():
+                return Response({"message": "خطأ: المعرّف الفيزيائي الجديد مسجل مسبقاً لعداد آخر."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # لتغيير المفتاح الأساسي UUID في دجانغو، نقوم بإنشاء سجل جديد وحذف القديم أو تحديثه مباشرة
+            # سنقوم بربط وتحديث الـ UUID وحفظ السجل
+            meter.meterId = new_meter_id
+            meter.save()
+            
+            # تصفير الكاش لمزامنة البيانات فورا
+            from django.core.cache import cache
+            cache.clear()
+
+            return Response({
+                "status": "success",
+                "message": "تم تحديث معرّف العداد الفيزيائي ومسح الكاش بنجاح."
+            }, status=status.HTTP_200_OK)
+        except Meter.DoesNotExist:
+            return Response({"message": "العداد غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
     def delete(self, request, meter_id):
         try:
-            MeterService.delete_meter(meter_id)
-            return Response({"status": "success", "message": "تم حذف العداد الفيزيائي وجميع قراءاته نهائياً."}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"message": f"العداد غير موجود: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
-
-
+            meter = Meter.objects.get(pk=meter_id)
+            meter.delete()
+            return Response({
+                "status": "success",
+                "message": "تم حذف العداد الفيزيائي وجميع سجلاته وقراءاته وتنبؤاته نهائياً."
+            }, status=status.HTTP_200_OK)
+        except Meter.DoesNotExist:
+            return Response({"message": f"العداد غير موجود."}, status=status.HTTP_404_NOT_FOUND)
 class AdminMeterAssociationAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
