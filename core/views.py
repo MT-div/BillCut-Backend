@@ -292,28 +292,34 @@ class AdminCreateUserAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
     def get(self, request):
-        # 1. قراءة نص البحث المرسل اختيارياً من الموبايل في الرابط (مثل: ?search=أحمد)
         search_query = request.query_params.get('search', None)
-        
-        # جلب المستخدمين الأساسيين غير المحذوفين
         queryset = User.objects.filter(role='RESIDENT').order_by('-createdAt')
         
-        # 2. تطبيق الفلترة السحابية الآمنة وغير الحساسة للأحرف (icontains) على الاسم أو رقم الهاتف
+        # 1. تطبيق الفلترة السحابية الآمنة أولاً إن وجدت
         if search_query:
             queryset = queryset.filter(
                 Q(fullName__icontains=search_query) | 
                 Q(phoneNumber__icontains=search_query)
             )
             
+        # 2. تطبيق الترقيم والتحميل التدريجي (Pagination) بمعدل 10 مستخدمين في الصفحة
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 10
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        
+        if page is not None:
+            serializer = UserSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         serializer = UserSerializer(queryset, many=True)
         return Response({
             "status": "success",
-            "message": "تم استرداد قائمة المستهلكين المفلترة بنجاح.",
+            "message": "تم استرداد قائمة المستهلكين بنجاح.",
             "data": serializer.data
         }, status=status.HTTP_200_OK)
 
     def post(self, request):
-        # يبقى كود الـ post لإنشاء المستخدم كما هو تماماً بالأسفل...
+        # يبقى كود الـ post لإنشاء الحساب كما هو تماماً بالأسفل...
         serializer = UserCreationSerializer(data=request.data)
         if serializer.is_valid():
             user, temp_password = UserService.create_resident_user(serializer.validated_data['fullName'], serializer.validated_data['phoneNumber'])
