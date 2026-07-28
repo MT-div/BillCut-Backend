@@ -1,3 +1,5 @@
+# افتح ملف core/services/tariff_service.py واستبدل كوده بالكامل كالتالي ليكون مبسطاً ومتناسقاً:
+
 from datetime import date
 from core.models import TariffVersion, TariffTier
 from django.db import transaction
@@ -6,18 +8,15 @@ class TariffService:
 
     @staticmethod
     def create_new_tariff(effective_date: date, tiers_data: list) -> TariffVersion:
-        # استخدام معالجة معزولة لضمان حماية المعطيات
         with transaction.atomic():
-            # تعطيل جميع إصدارات التعرفة السابقة
-            TariffVersion.objects.all().update(isActive=False)
+            # تم إلغاء كود تحديث isActive القديم لعدم الحاجة له بعد الآن
             
-            # إنشاء إصدار التعرفة الجديد والنشط
+            # إنشاء إصدار التعرفة الجديد وحفظ تاريخ نفاذه
             new_version = TariffVersion.objects.create(
-                effectiveDate=effective_date,
-                isActive=True
+                effectiveDate=effective_date
             )
             
-            # بناء وحفظ الشرائح التابعة للإصدار الجديد
+            # بناء وحفظ الشرائح التابعة له
             tiers_to_create = []
             for item in tiers_data:
                 tiers_to_create.append(

@@ -8,9 +8,22 @@ from core.models import Meter, ConsumptionReading, Budget, DailyForecast, Monthl
 class DashboardService:
 
     @staticmethod
-    def calculate_syrian_cost(consumption_kwh: Decimal) -> Decimal:
+    def calculate_syrian_cost(consumption_kwh: Decimal, current_date: date = None) -> Decimal:
+        """
+        تحسب التكلفة بالليرة السورية للاستهلاك بناءً على تاريخ نفاذ التعرفة ديناميكياً (معدلة ومصححة)
+        """
+        if current_date is None:
+            current_date = date.today()
+            
         try:
-            active_version = TariffVersion.objects.get(isActive=True)
+            # استعلام ديناميكي ذكي ومحمي تاريخياً يطابق التوقيت المستهدف للـ الحساب المالي
+            active_version = TariffVersion.objects.filter(
+                effectiveDate__lte=current_date
+            ).order_by('-effectiveDate').first()
+            
+            if active_version is None:
+                raise ObjectDoesNotExist()
+
             tiers = active_version.tiers.order_by('tierNumber')
         except ObjectDoesNotExist:
             if consumption_kwh <= Decimal('300.00'):
@@ -92,10 +105,11 @@ class DashboardService:
             consumption_wh = latest_reading.cumulativeWh - start_reading.cumulativeWh
             cycle_consumption_kwh = round(consumption_wh / Decimal('1000.00'), 2)
 
-        accumulated_cost_syp = cls.calculate_syrian_cost(cycle_consumption_kwh)
+        # تمرير التوقيت الحالي لـ دالة حساب التكلفة لتعمل ديناميكياً بدقة
+        accumulated_cost_syp = cls.calculate_syrian_cost(cycle_consumption_kwh, current_date)
 
-        # الكاش للبيانات الثابتة
-        cache_key_static = f"dashboard_static_v4_{meter_id}_{current_date.strftime('%Y%m%d')}"
+        # الكاش للبيانات الثابتة لليوم
+        cache_key_static = f"dashboard_static_v5_{meter_id}_{current_date.strftime('%Y%m%d')}"
         static_data = cache.get(cache_key_static)
 
         if not static_data:
@@ -113,19 +127,25 @@ class DashboardService:
             div_days = Decimal(str(remaining_days_with_today))
 
             try:
-                active_version = TariffVersion.objects.get(isActive=True)
+                active_version = TariffVersion.objects.filter(
+                    effectiveDate__lte=current_date
+                ).order_by('-effectiveDate').first()
+                
+                if not active_version:
+                    raise ObjectDoesNotExist()
+
                 tier1 = active_version.tiers.filter(tierNumber=1).first()
                 support_limit = Decimal(str(tier1.endKWh)) if tier1 else Decimal('300.00')
             except ObjectDoesNotExist:
                 support_limit = Decimal('300.00')
 
-            # استرجاع الميزانية المالية بالليرة السورية لحل مشكلة الـ NaN
+            # استرجاع الميزانية وتصفير الـ NaN
             target_budget_syp = 0
             budget_limit = Decimal('0.00')
             try:
                 budget = Budget.objects.get(meter=meter)
                 budget_limit = budget.equivalentLimitKWh
-                target_budget_syp = int(budget.targetBudgetSYP) # تحويل لـ Integer
+                target_budget_syp = int(budget.targetBudgetSYP)
                 avg_budget_target_kwh = round((budget.equivalentLimitKWh - yesterday_consumption_kwh) / div_days, 2)
                 if avg_budget_target_kwh < 0:
                     avg_budget_target_kwh = Decimal('0.00')
@@ -147,19 +167,10 @@ class DashboardService:
             except ObjectDoesNotExist:
                 today_predicted_kwh = Decimal('12.50')
 
-            
             avg_sub_target_kwh = round((support_limit - yesterday_consumption_kwh) / div_days, 2)
             if avg_sub_target_kwh < 0:
                 avg_sub_target_kwh = Decimal('0.00')
 
-            avg_budget_target_kwh = Decimal('0.00')
-            try:
-                budget = Budget.objects.get(meter=meter)
-                avg_budget_target_kwh = round((budget.equivalentLimitKWh - yesterday_consumption_kwh) / div_days, 2)
-                if avg_budget_target_kwh < 0:
-                    avg_budget_target_kwh = Decimal('0.00')
-            except ObjectDoesNotExist:
-                pass
             static_data = {
                 "cycleProgressDays": days_passed,
                 "cycleRemainingDays": days_remaining,
@@ -167,7 +178,7 @@ class DashboardService:
                 "cycleEndDate": cycle_end_date.strftime("%Y-%m-%d"),
                 "supportLimitKWh": float(support_limit),
                 "budgetLimitKWh": float(budget_limit),
-                "targetBudgetSYP": target_budget_syp, # إضافة القيمة المالية لحل الـ NaN
+                "targetBudgetSYP": target_budget_syp,
                 "startReadingWh": float(start_reading.cumulativeWh) if start_reading else 0.0,
                 "yesterdayEndReadingWh": float(yesterday_end_wh),
                 "predictedBillSYP": int(predicted_bill_syp),
@@ -197,7 +208,7 @@ class DashboardService:
             "cycleEndDate": static_data['cycleEndDate'],
             "supportLimitKWh": static_data['supportLimitKWh'],
             "budgetLimitKWh": static_data['budgetLimitKWh'],
-            "targetBudgetSYP": static_data['targetBudgetSYP'], # إرجاع القيمة البرمجية لإنهاء الـ NaN
+            "targetBudgetSYP": static_data['targetBudgetSYP'],
             "cycleActualConsumptionKWh": float(cycle_consumption_kwh),
             "accumulatedCostSYP": int(accumulated_cost_syp),
             "predictedBillSYP": static_data['predictedBillSYP'],

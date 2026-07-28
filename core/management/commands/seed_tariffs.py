@@ -2,20 +2,19 @@ from datetime import date
 from django.core.management.base import BaseCommand
 from core.models import TariffVersion, TariffTier
 
+
 class Command(BaseCommand):
     help = 'يزرع ويحقن تعرفة الشرائح الكهربائية السورية المعتمدة لعام 2025 في قاعدة البيانات تلقائياً'
 
     def handle(self, *args, **kwargs):
-        # 1. إلغاء تفعيل أي إصدارات تعرفة قديمة لضمان الاتساق
-        TariffVersion.objects.all().update(isActive=False)
+        # تم إلغاء أسطر التحديث القديمة لـ isActive لعدم الحاجة لها برمجياً بعد الآن
 
-        # 2. إنشاء إصدار تعرفة جديد ونشط لعام 2025
+        # إنشاء إصدار تعرفة جديد ومحدد بتاريخ نفاذ 1 تشرين الثاني 2025
         tariff_version = TariffVersion.objects.create(
-            effectiveDate=date(2025, 11, 1),
-            isActive=True
+            effectiveDate=date(2025, 11, 1)
         )
 
-        # 3. إنشاء الشريحة الأولى المعتمدة لعام 2025: من 0 إلى 300 ك.و.س بسعر 600 ل.س
+        # إنشاء الشريحة الأولى المعتمدة لعام 2025: من 0 إلى 300 ك.و.س بسعر 600 ل.س
         TariffTier.objects.create(
             tariffVersion=tariff_version,
             tierNumber=1,
@@ -24,8 +23,7 @@ class Command(BaseCommand):
             pricePerKWh=600.00
         )
 
-        # 4. إنشاء الشريحة الثانية المعتمدة لعام 2025: ما فوق 300 ك.و.س بسعر 1400 ل.س
-        # الشريحة الأخيرة تترك القيمة العليا لها Null لتعبر عن "ما فوق"
+        # إنشاء الشريحة الثانية المعتمدة لعام 2025: ما فوق 300 ك.و.س بسعر 1400 ل.س
         TariffTier.objects.create(
             tariffVersion=tariff_version,
             tierNumber=2,

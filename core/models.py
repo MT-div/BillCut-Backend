@@ -112,14 +112,13 @@ class Notification(models.Model):
         return f"Notification {self.notificationId}: {self.title}"
 
 # 10. كلاس نسخة وإصدار التعرفة الحكومية
+
 class TariffVersion(models.Model):
     versionId = models.BigAutoField(primary_key=True)
-    effectiveDate = models.DateField()
-    isActive = models.BooleanField(default=False)
+    effectiveDate = models.DateField() # الاعتماد الكلي على تاريخ السريان والنفاذ
 
     def __str__(self):
-        return f"Tariff Version {self.versionId} (Active: {self.isActive})"
-
+        return f"Tariff Version {self.versionId} (Effective: {self.effectiveDate})"
 # 11. كلاس الشرائح الفردية التابعة لإصدار التعرفة (Composition)
 class TariffTier(models.Model):
     tierId = models.BigAutoField(primary_key=True)
