@@ -514,3 +514,22 @@ class PasswordUpdateAPIView(APIView):
                 status=status.HTTP_200_OK,
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class AdminStatsAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
+    def get(self, request):
+        try:
+            users_count = User.objects.filter(role='RESIDENT').count()
+            meters_count = Meter.objects.count()
+            return Response({
+                "status": "success",
+                "data": {
+                    "usersCount": users_count,
+                    "metersCount": meters_count
+                }
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"message": f"تعذر استرجاع الإحصائيات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
