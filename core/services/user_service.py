@@ -30,8 +30,13 @@ class UserService:
         user = User.objects.get(pk=user_id, role='RESIDENT')
         user.fullName = full_name
         user.phoneNumber = phone_number
+        
+        # حسم التزامن الهيكلي: إعادة صياغة ومزامنة اسم المستخدم (Username) تلقائياً ليطابق الهاتف المعدّل من الأدمن
+        user.username = f"user_{phone_number[-10:]}"
+        
         user.save()
         return user
+
 
     @staticmethod
     def delete_user_account(user_id: int) -> None:
