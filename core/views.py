@@ -284,23 +284,36 @@ class BulkIngestionAPIView(APIView):
 
 # ==================== 4. واجهات الإدارة لمدير النظام (Admin Users Only) ====================
 
-# ابحث عن كلاس AdminCreateUserAPIView في ملف core/views.py واستبدله كالتالي لدعم استرجاع قائمة المستخدمين:
+
+
+from django.db.models import Q # استيراد مكوّن الاستعلامات المعقدة Q لفلترة الجداول
 
 class AdminCreateUserAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly] # حماية للأدمن فقط
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
     def get(self, request):
-        # [UC_13 -> Read] جلب جميع المستخدمين المسجلين كـ مستهلكين من قاعدة البيانات مرتبين من الأحدث للأقدم
-        users = User.objects.filter(role='RESIDENT').order_by('-createdAt')
-        serializer = UserSerializer(users, many=True)
+        # 1. قراءة نص البحث المرسل اختيارياً من الموبايل في الرابط (مثل: ?search=أحمد)
+        search_query = request.query_params.get('search', None)
+        
+        # جلب المستخدمين الأساسيين غير المحذوفين
+        queryset = User.objects.filter(role='RESIDENT').order_by('-createdAt')
+        
+        # 2. تطبيق الفلترة السحابية الآمنة وغير الحساسة للأحرف (icontains) على الاسم أو رقم الهاتف
+        if search_query:
+            queryset = queryset.filter(
+                Q(fullName__icontains=search_query) | 
+                Q(phoneNumber__icontains=search_query)
+            )
+            
+        serializer = UserSerializer(queryset, many=True)
         return Response({
             "status": "success",
-            "message": "تم استرداد قائمة المستهلكين بنجاح.",
+            "message": "تم استرداد قائمة المستهلكين المفلترة بنجاح.",
             "data": serializer.data
         }, status=status.HTTP_200_OK)
 
     def post(self, request):
-        # [UC_13 -> Create] الإبقاء على كود إنشاء المستخدم السابق كما هو تماماً تحتها...
+        # يبقى كود الـ post لإنشاء المستخدم كما هو تماماً بالأسفل...
         serializer = UserCreationSerializer(data=request.data)
         if serializer.is_valid():
             user, temp_password = UserService.create_resident_user(serializer.validated_data['fullName'], serializer.validated_data['phoneNumber'])
