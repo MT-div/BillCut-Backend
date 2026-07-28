@@ -42,7 +42,11 @@ class MeterPreferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserMeterPreference
         fields = ['id', 'alias', 'isDefault', 'assignedDate']
-
+# 16. DTO الخاص باسترجاع وعرض بيانات العداد الفيزيائي للأدمن (UC_14)
+class MeterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Meter
+        fields = ['meterId', 'registerDate']
 # 6. DTO الخاص بضبط وحفظ الميزانية المالية بالليرة السورية
 class BudgetSerializer(serializers.Serializer):
     targetBudgetSYP = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1.0)

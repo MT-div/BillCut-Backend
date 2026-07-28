@@ -15,7 +15,7 @@ from .models import Notification, NotificationSettings, User, Meter, UserMeterPr
 
 # استيراد عقود البيانات (الـ DTOs)
 from .serializers import (
-    LoginSerializer, PasswordUpdateSerializer, PhoneUpdateSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
+    LoginSerializer, MeterSerializer, PasswordUpdateSerializer, PhoneUpdateSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
     BudgetSerializer, DashboardResponseSerializer, ConsumptionUpdateSerializer, 
     BulkIngestionSerializer, AnalyticsResponseSerializer, NotificationSerializer, 
     NotificationSettingsUpdateSerializer, UserMeterPreferenceUpdateSerializer, 
@@ -343,10 +343,36 @@ class AdminUserDetailAPIView(APIView):
             return Response({"message": f"تعذر الحذف: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
 
 
+
 class AdminMeterListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
+    def get(self, request):
+        # [UC_14 -> Read] جلب قائمة العدادات المرقّمة والمفلترة بالبحث سحابياً لمدير النظام
+        search_query = request.query_params.get('search', None)
+        queryset = Meter.objects.all().order_by('-registerDate')
+        
+        # فلترة البحث بالـ UUID الفيزيائي سحابياً
+        if search_query:
+            queryset = queryset.filter(meterId__icontains=search_query)
+            
+        # تطبيق الترقيم والتحميل التدريجي (10 عدادات في الصفحة)
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 10
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        
+        if page is not None:
+            serializer = MeterSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = MeterSerializer(queryset, many=True)
+        return Response({
+            "status": "success",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
     def post(self, request):
+        # يبقى كود الـ post لإنشاء العداد كما هو تماماً بالأسفل...
         meter_id_raw = request.data.get('meterId', None)
         if not meter_id_raw:
             return Response({"message": "يجب تزويد المعرّف الفيزيائي للعداد (UUID/MAC)."}, status=status.HTTP_400_BAD_REQUEST)
@@ -355,7 +381,6 @@ class AdminMeterListCreateAPIView(APIView):
             return Response({"status": "success", "message": "تم تسجيل العداد بنجاح.", "data": {"meterId": meter.meterId, "registerDate": meter.registerDate}}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"message": f"تعذر الإضافة: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 class AdminMeterDetailAPIView(APIView):
