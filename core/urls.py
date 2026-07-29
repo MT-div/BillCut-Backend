@@ -5,6 +5,7 @@ from .views import (
     AdminMeterListCreateAPIView,
     AdminMeterUnassignmentAPIView,
     AdminStatsAPIView,
+    AdminTariffDetailAPIView,
     AdminTariffUpdateAPIView,
     AdminTriggerDailyTasksAPIView,
     AdminUserDetailAPIView,
@@ -66,5 +67,6 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('admin/stats/', AdminStatsAPIView.as_view(), name='api_admin_stats'),
+    path('admin/tariff/detail/<int:version_id>/', AdminTariffDetailAPIView.as_view(), name='api_admin_tariff_detail'),
 
 ]

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Notification, User, Meter, UserMeterPreference, Budget, NotificationSettings
+from .models import Notification, TariffTier, TariffVersion, User, Meter, UserMeterPreference, Budget, NotificationSettings
 
 # 1. DTO الخاص باسترجاع بيانات المستخدم الأساسية
 class UserSerializer(serializers.ModelSerializer):
@@ -198,3 +198,15 @@ class PasswordUpdateSerializer(serializers.Serializer):
     newPassword = serializers.CharField(write_only=True, min_length=8)
     confirmPassword = serializers.CharField(write_only=True)
  
+ 
+class TariffTierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TariffTier
+        fields = ['tierId', 'tierNumber', 'startKWh', 'endKWh', 'pricePerKWh']
+
+class TariffVersionSerializer(serializers.ModelSerializer):
+    tiers = TariffTierSerializer(many=True, read_only=True) # جلب الشرائح التابعة للإصدار ديناميكياً
+
+    class Meta:
+        model = TariffVersion
+        fields = ['versionId', 'effectiveDate', 'tiers']

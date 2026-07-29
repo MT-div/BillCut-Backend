@@ -3,9 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import authenticate
 from django.utils.timezone import make_aware
-from datetime import datetime
+from datetime import datetime, date
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken # استيراد محرك توليد الـ Tokens
+from django.db import transaction
 
 # استيراد كلاسات الصلاحية المخصصة التي برمجناها
 from .permissions import IsAdminUserOnly, IsResidentUserOnly
@@ -452,20 +453,103 @@ class AdminMeterUnassignmentAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+from core.models import TariffVersion, TariffTier
+from .serializers import TariffVersionSerializer, TariffVersionCreateSerializer
+
 class AdminTariffUpdateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
 
+    def get(self, request):
+        # [UC_15 -> Read] جلب قائمة بجميع إصدارات التعرفة والشرائح التابعة لها لجدول الأدمن
+        versions = TariffVersion.objects.all().order_by('-effectiveDate')
+        serializer = TariffVersionSerializer(versions, many=True)
+        return Response({
+            "status": "success",
+            "message": "تم استرداد قائمة إصدارات التعرفة بنجاح.",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
     def post(self, request):
+        # [UC_15 -> Create] إنشاء إصدار تعرفة جديد وشرائحه التفاعلية
         serializer = TariffVersionCreateSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 version = TariffService.create_new_tariff(serializer.validated_data['effectiveDate'], serializer.validated_data['tiers'])
-                return Response({"status": "success", "message": f"تم تفعيل إصدار التعرفة الجديدة لعام {version.effectiveDate.year} بنجاح."}, status=status.HTTP_201_CREATED)
+                return Response({
+                    "status": "success",
+                    "message": f"تم تفعيل إصدار التعرفة الجديدة لعام {version.effectiveDate.year} بنجاح."
+                }, status=status.HTTP_201_CREATED)
             except Exception as e:
                 return Response({"message": f"تعذر التحديث: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class AdminTariffDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
+    def put(self, request, version_id):
+        # [UC_15 -> Update] تعديل تعرفة مستقبلية لم تطبق بعد (يُمنع تعديل التعرفة السارية حالياً تاريخياً!)
+        try:
+            version = TariffVersion.objects.get(pk=version_id)
+            
+            # قيد الأمان الصارم: يمنع تعديل أي تعرفة سريانها في الماضي أو اليوم
+            if version.effectiveDate <= date.today():
+                return Response({"message": "عذراً، يمنع تعديل التعرفة الكهربائية السارية حالياً أو التاريخية حماية للفواتير المسجلة."}, status=status.HTTP_403_FORBIDDEN)
+
+            serializer = TariffVersionCreateSerializer(data=request.data)
+            if serializer.is_valid():
+                with transaction.atomic():
+                    # مسح الشرائح القديمة لإصدار التعرفة المستقبلية وإعادة حقن الجديدة المحدثة
+                    version.effectiveDate = serializer.validated_data['effectiveDate']
+                    version.save()
+                    
+                    TariffTier.objects.filter(tariffVersion=version).delete()
+                    
+                    tiers_to_create = []
+                    for item in serializer.validated_data['tiers']:
+                        tiers_to_create.append(
+                            TariffTier(
+                                tariffVersion=version,
+                                tierNumber=item['tierNumber'],
+                                startKWh=item['startKWh'],
+                                endKWh=item['endKWh'],
+                                pricePerKWh=item['pricePerKWh']
+                            )
+                        )
+                    TariffTier.objects.bulk_create(tiers_to_create)
+                    
+                # مسح الكاش لمزامنة البيانات
+                from django.core.cache import cache
+                cache.clear()
+
+                return Response({
+                    "status": "success",
+                    "message": "تم تعديل وحفظ التعرفة المستقبلية وشرائحها بنجاح ومزامنة الكاش."
+                }, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except TariffVersion.DoesNotExist:
+            return Response({"message": "إصدار التعرفة غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, version_id):
+        # [UC_15 -> Delete] حذف تعرفة مستقبلية لم تطبق بعد
+        try:
+            version = TariffVersion.objects.get(pk=version_id)
+            
+            # قيد الأمان الصارم: يمنع حذف التعرفات السارية
+            if version.effectiveDate <= date.today():
+                return Response({"message": "عذراً، يمنع حذف التعرفة الكهربائية السارية حالياً حماية لاتساق بيانات المشتركين."}, status=status.HTTP_403_FORBIDDEN)
+
+            version.delete() # الحذف التلقائي سيمسح شرائحها المرتبطة بها
+            
+            from django.core.cache import cache
+            cache.clear()
+
+            return Response({
+                "status": "success",
+                "message": "تم حذف التعرفة المستقبلية وشرائحها بنجاح من سجلات النظام."
+            }, status=status.HTTP_200_OK)
+        except TariffVersion.DoesNotExist:
+            return Response({"message": "إصدار التعرفة غير موجود."}, status=status.HTTP_404_NOT_FOUND)
 
 class AdminTriggerDailyTasksAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserOnly]
