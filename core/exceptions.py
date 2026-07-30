@@ -5,39 +5,42 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _extract_error_messages(data):
+    """
+    دالة مساعدة تفكك المصفوفات والقواميس المعقدة (مثل أخطاء SimpleJWT)
+    وتستخرج كافة النصوص بأمان دون حدوث TypeError
+    """
+    messages = []
+    if isinstance(data, dict):
+        for key, val in data.items():
+            # يتجاهل الكلمات الكودية الروتينية مثل code أو token_class ويركز على الفحوى
+            if key in ['code', 'token_class', 'token_type']:
+                continue
+            messages.extend(_extract_error_messages(val))
+    elif isinstance(data, list):
+        for item in data:
+            messages.extend(_extract_error_messages(item))
+    else:
+        messages.append(str(data))
+    return messages
+
 def custom_exception_handler(exc, context):
     """
     مُعالج الاستثناءات المركزي الموحد للنظام:
-    يقوم باعتراض جميع الأخطاء الصادرة من DRF أو الـ Validation أو السيرفر،
-    ويغلفها بنمط موحد يفهمه الفرونت إند (Expo) بنسبة 100%:
+    تحويل جميع أخطاء DRF و SimpleJWT إلى الغلاف الموحد:
     {"status": "error", "message": "نص الخطأ"}
     """
-    # 1. استدعاء معالج الاستثناءات الافتراضي لـ DRF للحصول على الاستجابة الأولية
     response = exception_handler(exc, context)
 
-    # 2. في حال كان الخطأ صادر من DRF (مثل ValidationError, PermissionDenied, NotFound...)
     if response is not None:
         customized_response = {"status": "error"}
+        extracted_msgs = _extract_error_messages(response.data)
         
-        # استخراج رسالة الخطأ وتحويل القواميس/المصفوفات إلى نص مفهوم للمواطن
-        if isinstance(response.data, dict):
-            # إذا كان الخطأ عبارة عن قاموس حقول (Validation Errors)
-            errors = []
-            for field, error_list in response.data.items():
-                if isinstance(error_list, list):
-                    errors.append(f"{' '.join(error_list)}")
-                else:
-                    errors.append(f"{error_list}")
-            customized_response["message"] = " ".join(errors) if errors else "حدث خطأ في المدخلات."
-        elif isinstance(response.data, list):
-            customized_response["message"] = " ".join(response.data)
-        else:
-            customized_response["message"] = str(response.data)
-
+        # دمج رسائل الأخطاء المستخرجة أو وضع رسالة افتراضية
+        customized_response["message"] = " ".join(extracted_msgs) if extracted_msgs else "حدث خطأ في تنفيذ الطلب."
         response.data = customized_response
         return response
 
-    # 3. في حال كان الخطأ غير متوقع في السيرفر (Unhandled 500 Server Error)
     logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
     return Response(
         {
