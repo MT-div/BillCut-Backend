@@ -11,6 +11,7 @@ from .views import (
     AdminUserDetailAPIView,
     BulkIngestionAPIView,
     ConsumptionUpdateAPIView,
+    CurrentUserAPIView,
     LoginAPIView, 
     AdminCreateUserAPIView,
     MeterAnalyticsAPIView,
@@ -68,5 +69,7 @@ urlpatterns = [
 
     path('admin/stats/', AdminStatsAPIView.as_view(), name='api_admin_stats'),
     path('admin/tariff/detail/<int:version_id>/', AdminTariffDetailAPIView.as_view(), name='api_admin_tariff_detail'),
+
+    path('auth/me/', CurrentUserAPIView.as_view(), name='api_auth_me'),
 
 ]

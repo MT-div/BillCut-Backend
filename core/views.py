@@ -721,3 +721,39 @@ class AdminStatsAPIView(APIView):
         except Exception as e:
             logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"تعذر استرجاع الإحصائيات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CurrentUserAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        # 1. جلب العداد الافتراضي الحالي
+        default_pref = UserMeterPreference.objects.filter(user=user, isDefault=True).first()
+        default_meter_id = str(default_pref.meter.meterId) if default_pref else None
+
+        # 2. جلب جميع العدادات المرتبطة بحساب هذا المستخدم ديناميكياً
+        user_prefs = UserMeterPreference.objects.filter(user=user)
+        meters_list = [
+            {
+                "preferenceId": p.id,
+                "meterId": str(p.meter.meterId),
+                "alias": p.alias,
+                "isDefault": p.isDefault
+            } for p in user_prefs
+        ]
+
+        return Response({
+            "status": "success",
+            "message": "تم استرداد بيانات الجلسة الحالية بنجاح.",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "fullName": user.fullName,
+                "phoneNumber": user.phoneNumber,
+                "role": user.role,
+                "defaultMeterId": default_meter_id,
+                "meters": meters_list
+            }
+        }, status=status.HTTP_200_OK)
