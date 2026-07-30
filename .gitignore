@@ -4,3 +4,5 @@ __pycache__
 db.sqlite3
 .DS_Store
 channel_1.dat
+.env
+__pycache__/

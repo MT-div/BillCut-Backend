@@ -11,7 +11,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-
+import os
+from pathlib import Path
+from datetime import timedelta
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,12 +22,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%8&-2kf7px+bp*xi81y!q2d^mhomp7rlub7p62kgu58*blbc4v'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-%8&-2kf7px+bp*xi81y!q2d^mhomp7rlub7p62kgu58*blbc4v'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
 
 
 # Application definition
@@ -150,4 +155,4 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),                    # نوع الـ Token المرسل في الـ Header (Bearer Token)
 }
 
-METER_API_KEY = 'billcut-secret-iot-meter-key-2025'
+METER_API_KEY = os.environ.get('METER_API_KEY', 'billcut-secret-iot-meter-key-2025')
