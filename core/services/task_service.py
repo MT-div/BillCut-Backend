@@ -11,6 +11,7 @@ from core.models import (
 from core.ai_models.daily_model import predict_daily_consumption
 from core.ai_models.monthly_model import predict_monthly_consumption
 from core.services.tariff_service import TariffService
+from core.services.push_service import PushService
 
 
 class TaskService:
@@ -52,13 +53,18 @@ class TaskService:
 
         if forecast.predictedConsumptionKWh > 0 and (deviation / forecast.predictedConsumptionKWh) > Decimal('0.40'):
             forecast.isAnomalous = True
+            
+            title = "تحذير: عطل كهربائي محتمل!"
+            msg = f"تنبيه: تجاوز استهلاكك الفعلي بالأمس التنبؤ اليومي بمقدار {forecast.deviationAmountKWh} ك.و.س."
+            
             Notification.objects.create(
-                meter=meter,
-                title="تحذير: عطل كهربائي محتمل!",
-                message=f"تنبيه: تجاوز استهلاكك الفعلي بالأمس التنبؤ اليومي بمقدار {forecast.deviationAmountKWh} ك.و.س. يرجى التحقق من سلامة الأجهزة.",
-                type="ANOMALY",
-                isRead=False
+                meter=meter, title=title, message=msg, type="ANOMALY", isRead=False
             )
+            
+            # فحص التفضيلات وإرسال الـ Push الخارجي حياً!
+            for pref in meter.user_preferences.all():
+                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.anomalyPushEnabled:
+                    PushService.send_push_notification(pref.user, title, msg)
 
         forecast.save()
         return forecast
@@ -161,6 +167,9 @@ class TaskService:
             type=msg_type,
             isRead=False
         )
+        for pref in meter.user_preferences.all():
+                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.tierPushEnabled:
+                    PushService.send_push_notification(pref.user, title, message)
 
         # ==================== ثانياً: إشعار الميزانية الشخصية (BUDGET) ====================
         if budget_limit > 0:
@@ -184,3 +193,6 @@ class TaskService:
                 type=b_msg_type,
                 isRead=False
             )
+            for pref in meter.user_preferences.all():
+                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.budgetPushEnabled:
+                    PushService.send_push_notification(pref.user, b_title, b_message)

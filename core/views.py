@@ -757,3 +757,24 @@ class CurrentUserAPIView(APIView):
                 "meters": meters_list
             }
         }, status=status.HTTP_200_OK)
+    
+
+
+class SavePushTokenAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        push_token = request.data.get('pushToken', None)
+        if not push_token:
+            return Response(
+                {"status": "error", "message": "يرجى تزويد رمز الإشعار pushToken."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        request.user.pushToken = push_token
+        request.user.save()
+
+        return Response(
+            {"status": "success", "message": "تم ربط وحفظ رمز إشعارات الهاتف بنجاح."},
+            status=status.HTTP_200_OK
+        )

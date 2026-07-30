@@ -17,7 +17,8 @@ from .views import (
     MeterDashboardAPIView,
     NotificationLogAPIView,
     NotificationSettingsAPIView, 
-    ProfileUpdateAPIView, 
+    ProfileUpdateAPIView,
+    SavePushTokenAPIView, 
     SetBudgetAPIView,
     UserMeterPreferenceAPIView,
     PasswordUpdateAPIView,
@@ -66,4 +67,7 @@ urlpatterns = [
 
     # 8. رابط تجديد صلاحية الـ JWT
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+  
+    # 9. رابط حفظ الـ pushToken للمستخدم
+    path('user/push_token/', SavePushTokenAPIView.as_view(), name='api_save_push_token'),
 ]

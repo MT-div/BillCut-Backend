@@ -12,6 +12,7 @@ class User(AbstractUser):
     phoneNumber = models.CharField(max_length=15, unique=True)
     role = models.CharField(max_length=20, choices=[('ADMIN', 'Admin'), ('RESIDENT', 'Resident')], default='RESIDENT')
     createdAt = models.DateTimeField(auto_now_add=True)
+    pushToken = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return f"{self.fullName} ({self.role})"
