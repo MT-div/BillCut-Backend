@@ -2,6 +2,7 @@ from core.models import Meter, UserMeterPreference
 
 
 from django.core.cache import cache # استيراد الكاش
+from core.services.cache_service import CacheService
 
 class MeterService:
 
@@ -29,6 +30,6 @@ class MeterService:
         pref.save()
 
         # حل مشكلة الكاش: تصفير الكاش السريع فوراً بمجرد تعديل اسم العداد أو حالته الافتراضية
-        cache.clear()
+        CacheService.invalidate_meter_dashboard_cache(str(pref.meter.meterId))
         
         return pref

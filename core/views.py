@@ -8,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken # استيراد محرك توليد الـ Tokens
 from django.db import transaction
 
+from core.services.cache_service import CacheService
+
 # استيراد كلاسات الصلاحية المخصصة التي برمجناها
 from .permissions import IsAdminUserOnly, IsResidentUserOnly
 
@@ -405,8 +407,8 @@ class AdminMeterDetailAPIView(APIView):
             meter.save()
             
             # تصفير الكاش لمزامنة البيانات فورا
-            from django.core.cache import cache
-            cache.clear()
+            CacheService.invalidate_meter_dashboard_cache(str(meter_id))
+
 
             return Response({
                 "status": "success",
@@ -519,8 +521,8 @@ class AdminTariffDetailAPIView(APIView):
                     TariffTier.objects.bulk_create(tiers_to_create)
                     
                 # مسح الكاش لمزامنة البيانات
-                from django.core.cache import cache
-                cache.clear()
+                
+                CacheService.invalidate_all_caches()
 
                 return Response({
                     "status": "success",
@@ -541,8 +543,7 @@ class AdminTariffDetailAPIView(APIView):
 
             version.delete() # الحذف التلقائي سيمسح شرائحها المرتبطة بها
             
-            from django.core.cache import cache
-            cache.clear()
+            CacheService.invalidate_all_caches()
 
             return Response({
                 "status": "success",

@@ -4,6 +4,7 @@ from django.utils.timezone import make_aware
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from core.models import Meter, ConsumptionReading, Budget, DailyForecast, MonthlyForecast, TariffVersion
+from core.services.cache_service import CacheService
 
 class DashboardService:
 
@@ -108,8 +109,8 @@ class DashboardService:
         # تمرير التوقيت الحالي لـ دالة حساب التكلفة لتعمل ديناميكياً بدقة
         accumulated_cost_syp = cls.calculate_syrian_cost(cycle_consumption_kwh, current_date)
 
-        # الكاش للبيانات الثابتة لليوم
-        cache_key_static = f"dashboard_static_v5_{meter_id}_{current_date.strftime('%Y%m%d')}"
+        # الكاش للبيانات الثابتة لليوم باستخدام خدمة الكاش المعزولة
+        cache_key_static = CacheService.get_dashboard_key(meter_id, current_date)
         static_data = cache.get(cache_key_static)
 
         if not static_data:

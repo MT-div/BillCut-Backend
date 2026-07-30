@@ -4,6 +4,7 @@ from django.utils.timezone import make_aware
 from django.core.cache import cache
 from core.models import Meter, ConsumptionReading
 from django.db import transaction
+from core.services.cache_service import CacheService
 
 class IngestionService:
 
@@ -40,8 +41,7 @@ class IngestionService:
 
         with transaction.atomic():
             ConsumptionReading.objects.filter(meter=meter).delete()
-            cache.clear()
-
+            CacheService.invalidate_meter_dashboard_cache(meter_id)
             for item in readings_data:
                 ts = datetime.fromtimestamp(item['timestamp'])
                 readings_to_create.append(

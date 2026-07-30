@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.exceptions import ObjectDoesNotExist
 from core.models import Meter, Budget, TariffVersion
+from core.services.cache_service import CacheService
 
 class BudgetService:
     
@@ -65,7 +66,6 @@ class BudgetService:
         )
         
         # حل مشكلة جمود الكاش: تصفير الكاش السريع فوراً لإجبار السيرفر على إعادة الحساب اللحظي المحدث للـ Dashboard
-        from django.core.cache import cache
-        cache.clear()
+        CacheService.invalidate_meter_dashboard_cache(meter_id)
         
         return budget
