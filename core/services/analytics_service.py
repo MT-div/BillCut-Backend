@@ -17,17 +17,17 @@ class AnalyticsService:
         else:
             current_date = date.today()
 
+        # =========================================================
         # 1. حساب وتجميع الاستهلاك الفعلي لآخر 12 شهراً سابقة (kWh)
+        # =========================================================
         monthly_history = []
-        historical_consumptions_for_ai = [] # سنغذي بها نموذج بايثون للمحاكاة
+        historical_consumptions_for_ai = []
 
         for i in range(12, 0, -1):
-            # حساب حدود كل شهر تاريخي بدقة
             first_day_of_month = (current_date - timedelta(days=i*30)).replace(day=1)
             next_month = first_day_of_month + timedelta(days=32)
             last_day_of_month = next_month.replace(day=1) - timedelta(days=1)
 
-            # استعلام الحدود الزمنية الواعية لـ SQLite
             start_dt = make_aware(datetime.combine(first_day_of_month, datetime.min.time()))
             end_dt = make_aware(datetime.combine(last_day_of_month, datetime.max.time()))
 
@@ -45,19 +45,18 @@ class AnalyticsService:
             })
             historical_consumptions_for_ai.append(m_consumption_kwh)
 
-        # 2. حساب وعرض التنبؤ الشهري للدورة الكهربائية الحالية (المحاكاة من الموديل)
+        # =========================================================
+        # 2. حساب وعرض التنبؤ الشهري للدورة الكهربائية الحالية
+        # =========================================================
         base_start_date = date(2025, 5, 1)
         delta_days = (current_date - base_start_date).days
         cycle_number = delta_days // 60
         cycle_start_date = base_start_date + timedelta(days=cycle_number * 60)
 
         try:
-            # محاولة جلب التنبؤ المحفوظ مسبقاً في الجداول
             monthly_forecast = MonthlyForecast.objects.get(meter=meter, cycleStartDate=cycle_start_date)
         except ObjectDoesNotExist:
-            # إذا لم يكن موجوداً، نقوم باستدعاء النموذج السحابي وتوليده وحفظه فوراً
             p1, p2 = predict_monthly_consumption(historical_consumptions_for_ai)
-            # حساب كلفة الفاتورة المتوقعة للشرائح
             from core.services.dashboard_service import DashboardService
             expected_bill = DashboardService.calculate_syrian_cost(p1 + p2)
             
@@ -69,14 +68,29 @@ class AnalyticsService:
                 expectedBillSYP=expected_bill
             )
 
-        # 3. حساب وعرض سجل مقارنة الاستهلاك اليومي والشذوذ لآخر 15 يوماً
+        # =========================================================
+        # 3. تحسين الأداء: تجميع التنبؤات اليومية للـ 15 يوماً في استعلام واحد (Bulk Fetch)
+        # =========================================================
+        fifteen_days_ago = current_date - timedelta(days=14)
+        
+        # استعلام واحد فقط بدلاً من 15 استعلاماً منفصلاً
+        existing_forecasts = DailyForecast.objects.filter(
+            meter=meter,
+            forecastDate__gte=fifteen_days_ago,
+            forecastDate__lte=current_date
+        )
+        # تحويل النتائج إلى قاموس سريع البحث في الذاكرة Dictionary Lookup (O(1) Time Complexity)
+        forecasts_map = {f.forecastDate: f for f in existing_forecasts}
+
         daily_history = []
+        forecasts_to_update = []
+        forecasts_to_create = []
+
         for i in range(14, -1, -1):
             target_date = current_date - timedelta(days=i)
             target_start_dt = make_aware(datetime.combine(target_date, datetime.min.time()))
             target_end_dt = make_aware(datetime.combine(target_date, datetime.max.time()))
 
-            # حساب الاستهلاك الفعلي لليوم المعني
             day_start_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__gte=target_start_dt).order_by('timestamp').first()
             day_end_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__lte=target_end_dt).order_by('timestamp').last()
 
@@ -85,31 +99,24 @@ class AnalyticsService:
                 day_wh = day_end_reading.cumulativeWh - day_start_reading.cumulativeWh
                 day_actual_kwh = round(day_wh / Decimal('1000.00'), 2)
 
-            try:
-                # محاولة جلب التنبؤ اليومي المحفوظ مسبقاً
-                daily_forecast = DailyForecast.objects.get(meter=meter, forecastDate=target_date)
-                # تحديث الاستهلاك الفعلي المسجل لليوم فوراً في جدول التنبؤ لضمان الدقة
+            # البحث في الذاكرة المخبئية بدلاً من ضرب الداتابيز لكل يوم
+            daily_forecast = forecasts_map.get(target_date)
+
+            if daily_forecast:
                 if daily_forecast.actualConsumptionKWh != day_actual_kwh:
                     daily_forecast.actualConsumptionKWh = day_actual_kwh
-                    # حساب قيمة الانحراف والشذوذ
                     deviation = day_actual_kwh - daily_forecast.predictedConsumptionKWh
                     daily_forecast.deviationAmountKWh = max(Decimal('0.00'), deviation)
-                    # إذا تجاوز الاستهلاك الفعلي التوقع بـ 40% (كشف شذوذ)
                     if daily_forecast.predictedConsumptionKWh > 0 and (deviation / daily_forecast.predictedConsumptionKWh) > Decimal('0.40'):
                         daily_forecast.isAnomalous = True
-                    daily_forecast.save()
-            except ObjectDoesNotExist:
-                # إذا لم يكن موجوداً، نقوم بتوليد تنبؤ يومي تقريبي وحفظه
-                # نأخذ متوسط استهلاك آخر 7 أيام كمدخل للنموذج اليومي
-                mock_history = [Decimal('12.50')] # في حال عدم توفر قراءات كافية
+                    forecasts_to_update.append(daily_forecast)
+            else:
+                mock_history = [Decimal('12.50')]
                 pred_daily = predict_daily_consumption(mock_history)
-                
                 deviation = day_actual_kwh - pred_daily
-                is_anomalous = False
-                if pred_daily > 0 and (deviation / pred_daily) > Decimal('0.40'):
-                    is_anomalous = True
+                is_anomalous = pred_daily > 0 and (deviation / pred_daily) > Decimal('0.40')
 
-                daily_forecast = DailyForecast.objects.create(
+                daily_forecast = DailyForecast(
                     meter=meter,
                     forecastDate=target_date,
                     predictedConsumptionKWh=pred_daily,
@@ -117,6 +124,7 @@ class AnalyticsService:
                     isAnomalous=is_anomalous,
                     deviationAmountKWh=max(Decimal('0.00'), deviation)
                 )
+                forecasts_to_create.append(daily_forecast)
 
             daily_history.append({
                 "date": target_date.strftime("%Y-%m-%d"),
@@ -125,6 +133,15 @@ class AnalyticsService:
                 "isAnomalous": daily_forecast.isAnomalous,
                 "deviationKWh": float(daily_forecast.deviationAmountKWh)
             })
+
+        # حفظ التعديلات والإضافات الجديدة بضربة واحدة في قاعدة البيانات (Bulk Save)
+        if forecasts_to_update:
+            DailyForecast.objects.bulk_update(
+                forecasts_to_update, 
+                ['actualConsumptionKWh', 'deviationAmountKWh', 'isAnomalous']
+            )
+        if forecasts_to_create:
+            DailyForecast.objects.bulk_create(forecasts_to_create)
 
         return {
             "meterId": meter_id,
