@@ -6,7 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from core.models import Meter, ConsumptionReading, Budget, DailyForecast, MonthlyForecast, TariffVersion
 from core.services.cache_service import CacheService
 from core.services.tariff_service import TariffService
-
+import calendar
 class DashboardService:
 
     @classmethod
@@ -23,9 +23,9 @@ class DashboardService:
 
         # صياغة الدورات السورية الثابتة
         if month in [1, 2]:
-            cycle_start_date = date(year, 1, 1)
-            is_leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
-            cycle_end_date = date(year, 2, 29 if is_leap else 28)
+         cycle_start_date = date(year, 1, 1)
+         # استخدام مكتبة بايثون القياسية لحساب السنة الكبيسة بدقة وشكل نظيف
+         cycle_end_date = date(year, 2, 29 if calendar.isleap(year) else 28)
         elif month in [3, 4]:
             cycle_start_date = date(year, 3, 1)
             cycle_end_date = date(year, 4, 30)

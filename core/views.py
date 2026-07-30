@@ -35,7 +35,8 @@ from core.services.dashboard_service import DashboardService
 from core.services.analytics_service import AnalyticsService
 from core.services.ingestion_service import IngestionService
 
-
+import logging
+logger = logging.getLogger(__name__)
 # ==================== 1. واجهات التحقق والمستخدم والملف الشخصي ====================
 
 
@@ -152,6 +153,7 @@ class MeterDashboardAPIView(APIView):
             serializer = DashboardResponseSerializer(dashboard_data)
             return Response({"status": "success", "message": "تم استرداد بيانات لوحة المراقبة بنجاح.", "data": serializer.data}, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"status": "error", "message": f"حدث خطأ أثناء معالجة البيانات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -168,6 +170,7 @@ class MeterAnalyticsAPIView(APIView):
             serializer = AnalyticsResponseSerializer(analytics_data)
             return Response({"status": "success", "message": "تم استرداد الرسوم البيانية بنجاح.", "data": serializer.data}, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"status": "error", "message": f"تعذر جلب البيانات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -208,6 +211,7 @@ class NotificationLogAPIView(APIView):
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({
                 "status": "error",
                 "message": f"خطأ أثناء استرجاع التنبيهات: {str(e)}"
@@ -233,6 +237,7 @@ class UserMeterPreferenceAPIView(APIView):
             except UserMeterPreference.DoesNotExist:
                 return Response({"message": "السجل غير موجود."}, status=status.HTTP_404_NOT_FOUND)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"message": f"خطأ داخلي: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -250,6 +255,7 @@ class SetBudgetAPIView(APIView):
                 budget = BudgetService.set_or_update_budget(meter_id, serializer.validated_data['targetBudgetSYP'])
                 return Response({"status": "success", "message": "تم تحديث الميزانية بنجاح.", "data": {"meterId": meter_id, "targetBudgetSYP": budget.targetBudgetSYP, "equivalentLimitKWh": budget.equivalentLimitKWh}}, status=status.HTTP_200_OK)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"status": "error", "message": f"خطأ أثناء معالجة الطلب: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -258,6 +264,7 @@ class SetBudgetAPIView(APIView):
 
 class ConsumptionUpdateAPIView(APIView):
     authentication_classes = []  # تعطيل مصادقة JWT المخصصة للمستخدمين
+
     permission_classes = [HasMeterApiKey]
     def post(self, request, meter_id):
         serializer = ConsumptionUpdateSerializer(data=request.data)
@@ -267,6 +274,7 @@ class ConsumptionUpdateAPIView(APIView):
                 reading = IngestionService.process_live_reading(meter_id, serializer.validated_data['watts'], dt)
                 return Response({"status": "success", "message": "تم استلام القراءة اللحظية وتراكمها بنجاح.", "data": {"readingId": reading.readingId, "cumulativeWh": reading.cumulativeWh, "timestamp": reading.timestamp.strftime("%Y-%m-%d %H:%M:%S")}}, status=status.HTTP_201_CREATED)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"status": "error", "message": f"خطأ برمجي أثناء الاستقبال: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -281,6 +289,7 @@ class BulkIngestionAPIView(APIView):
                 records_created = IngestionService.process_bulk_backfill(meter_id, serializer.validated_data['readings'])
                 return Response({"status": "success", "message": f"تم تهيئة وحقن {records_created} قراءة تاريخية بنجاح."}, status=status.HTTP_201_CREATED)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"status": "error", "message": f"تعذر إتمام الحقن: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -336,6 +345,7 @@ class AdminUserDetailAPIView(APIView):
             user = UserService.update_user_account(user_id, request.data.get('fullName'), request.data.get('phoneNumber'))
             return Response({"status": "success", "message": "تم تحديث حساب المستخدم بنجاح.", "data": {"userId": user.id, "fullName": user.fullName, "phoneNumber": user.phoneNumber}}, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"عطل أثناء التحديث: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, user_id):
@@ -343,6 +353,7 @@ class AdminUserDetailAPIView(APIView):
             UserService.delete_user_account(user_id)
             return Response({"status": "success", "message": "تم حذف حساب المستخدم وجميع ارتباطاته بنجاح."}, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"تعذر الحذف: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
 
 
@@ -383,6 +394,7 @@ class AdminMeterListCreateAPIView(APIView):
             meter = MeterService.add_new_meter(meter_id_raw)
             return Response({"status": "success", "message": "تم تسجيل العداد بنجاح.", "data": {"meterId": meter.meterId, "registerDate": meter.registerDate}}, status=status.HTTP_201_CREATED)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"تعذر الإضافة: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -437,6 +449,7 @@ class AdminMeterAssociationAPIView(APIView):
                 pref = AssociationService.assign_meter_to_user(serializer.validated_data['meterId'], serializer.validated_data['userId'], serializer.validated_data['alias'])
                 return Response({"status": "success", "message": "تم إسناد العداد للمستخدم بنجاح."}, status=status.HTTP_201_CREATED)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -451,6 +464,7 @@ class AdminMeterUnassignmentAPIView(APIView):
                 AssociationService.unassign_meter_from_user(serializer.validated_data['meterId'], serializer.validated_data['userId'])
                 return Response({"status": "success", "message": "تم إلغاء إسناد العداد بنجاح."}, status=status.HTTP_200_OK)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"message": str(e)}, status=status.HTTP_404_NOT_FOUND)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -482,6 +496,7 @@ class AdminTariffUpdateAPIView(APIView):
                     "message": f"تم تفعيل إصدار التعرفة الجديدة لعام {version.effectiveDate.year} بنجاح."
                 }, status=status.HTTP_201_CREATED)
             except Exception as e:
+                logger.error(f"Error occurred: {str(e)}", exc_info=True)
                 return Response({"message": f"تعذر التحديث: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -580,6 +595,7 @@ class AdminTriggerDailyTasksAPIView(APIView):
                 }
             }, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"خطأ تشغيلي: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
@@ -703,4 +719,5 @@ class AdminStatsAPIView(APIView):
                 }
             }, status=status.HTTP_200_OK)
         except Exception as e:
+            logger.error(f"Error occurred: {str(e)}", exc_info=True)
             return Response({"message": f"تعذر استرجاع الإحصائيات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
