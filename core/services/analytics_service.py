@@ -5,7 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from core.models import Meter, ConsumptionReading, DailyForecast, MonthlyForecast
 from core.ai_models.monthly_model import predict_monthly_consumption
 from core.ai_models.daily_model import predict_daily_consumption
-
+from core.services.tariff_service import TariffService
 class AnalyticsService:
 
     @classmethod
@@ -57,8 +57,7 @@ class AnalyticsService:
             monthly_forecast = MonthlyForecast.objects.get(meter=meter, cycleStartDate=cycle_start_date)
         except ObjectDoesNotExist:
             p1, p2 = predict_monthly_consumption(historical_consumptions_for_ai)
-            from core.services.dashboard_service import DashboardService
-            expected_bill = DashboardService.calculate_syrian_cost(p1 + p2)
+            expected_bill = TariffService.calculate_syrian_cost(p1 + p2)
             
             monthly_forecast = MonthlyForecast.objects.create(
                 meter=meter,

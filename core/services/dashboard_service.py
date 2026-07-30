@@ -5,56 +5,9 @@ from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from core.models import Meter, ConsumptionReading, Budget, DailyForecast, MonthlyForecast, TariffVersion
 from core.services.cache_service import CacheService
+from core.services.tariff_service import TariffService
 
 class DashboardService:
-
-    @staticmethod
-    def calculate_syrian_cost(consumption_kwh: Decimal, current_date: date = None) -> Decimal:
-        """
-        تحسب التكلفة بالليرة السورية للاستهلاك بناءً على تاريخ نفاذ التعرفة ديناميكياً (معدلة ومصححة)
-        """
-        if current_date is None:
-            current_date = date.today()
-            
-        try:
-            # استعلام ديناميكي ذكي ومحمي تاريخياً يطابق التوقيت المستهدف للـ الحساب المالي
-            active_version = TariffVersion.objects.filter(
-                effectiveDate__lte=current_date
-            ).order_by('-effectiveDate').first()
-            
-            if active_version is None:
-                raise ObjectDoesNotExist()
-
-            tiers = active_version.tiers.order_by('tierNumber')
-        except ObjectDoesNotExist:
-            if consumption_kwh <= Decimal('300.00'):
-                return consumption_kwh * Decimal('600.00')
-            else:
-                return (Decimal('300.00') * Decimal('600.00')) + ((consumption_kwh - Decimal('300.00')) * Decimal('1400.00'))
-
-        remaining_kwh = consumption_kwh
-        total_cost = Decimal('0.00')
-
-        for tier in tiers:
-            price = Decimal(str(tier.pricePerKWh))
-            if tier.endKWh is not None:
-                start = Decimal(str(tier.startKWh))
-                end = Decimal(str(tier.endKWh))
-                tier_range = end - start
-
-                if remaining_kwh > tier_range:
-                    total_cost += tier_range * price
-                    remaining_kwh -= tier_range
-                else:
-                    total_cost += remaining_kwh * price
-                    remaining_kwh = Decimal('0.00')
-                    break
-            else:
-                total_cost += remaining_kwh * price
-                remaining_kwh = Decimal('0.00')
-                break
-
-        return round(total_cost, 2)
 
     @classmethod
     def get_dashboard_data(cls, meter_id: str, simulated_date_str: str = None) -> dict:
@@ -107,7 +60,7 @@ class DashboardService:
             cycle_consumption_kwh = round(consumption_wh / Decimal('1000.00'), 2)
 
         # تمرير التوقيت الحالي لـ دالة حساب التكلفة لتعمل ديناميكياً بدقة
-        accumulated_cost_syp = cls.calculate_syrian_cost(cycle_consumption_kwh, current_date)
+        accumulated_cost_syp = TariffService.calculate_syrian_cost(cycle_consumption_kwh, current_date)
 
         # الكاش للبيانات الثابتة لليوم باستخدام خدمة الكاش المعزولة
         cache_key_static = CacheService.get_dashboard_key(meter_id, current_date)
