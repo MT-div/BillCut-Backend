@@ -41,7 +41,7 @@ class AnalyticsService:
 
             monthly_history.append({
                 "monthName": first_day_of_month.strftime("%B %Y"),
-                "consumptionKWh": float(m_consumption_kwh)
+                "consumptionKWh": round(m_consumption_kwh, 2)
             })
             historical_consumptions_for_ai.append(m_consumption_kwh)
 
@@ -127,12 +127,11 @@ class AnalyticsService:
 
             daily_history.append({
                 "date": target_date.strftime("%Y-%m-%d"),
-                "actualKWh": float(daily_forecast.actualConsumptionKWh),
-                "predictedKWh": float(daily_forecast.predictedConsumptionKWh),
+                "actualKWh": round(daily_forecast.actualConsumptionKWh, 2),
+                "predictedKWh": round(daily_forecast.predictedConsumptionKWh, 2),
                 "isAnomalous": daily_forecast.isAnomalous,
-                "deviationKWh": float(daily_forecast.deviationAmountKWh)
-            })
-
+                "deviationKWh": round(daily_forecast.deviationAmountKWh, 2)
+                 })
         # حفظ التعديلات والإضافات الجديدة بضربة واحدة في قاعدة البيانات (Bulk Save)
         if forecasts_to_update:
             DailyForecast.objects.bulk_update(
@@ -146,9 +145,9 @@ class AnalyticsService:
             "meterId": meter_id,
             "monthlyHistory": monthly_history,
             "currentCycleForecast": {
-                "predictedMonth1KWh": float(monthly_forecast.predictedMonth1KWh),
-                "predictedMonth2KWh": float(monthly_forecast.predictedMonth2KWh),
-                "expectedBillSYP": float(monthly_forecast.expectedBillSYP)
+                "predictedMonth1KWh": round(monthly_forecast.predictedMonth1KWh, 2),
+                "predictedMonth2KWh": round(monthly_forecast.predictedMonth2KWh, 2),
+                "expectedBillSYP": int(monthly_forecast.expectedBillSYP)
             },
             "dailyHistory": daily_history
         }

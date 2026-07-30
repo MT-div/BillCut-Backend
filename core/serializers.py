@@ -64,7 +64,7 @@ class MeterSerializer(serializers.ModelSerializer):
         ]
 # 6. DTO الخاص بضبط وحفظ الميزانية المالية بالليرة السورية
 class BudgetSerializer(serializers.Serializer):
-    targetBudgetSYP = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1.0)
+    targetBudgetSYP = serializers.DecimalField(max_digits=12, decimal_places=2, coerce_to_string=False, min_value=1.0)
 
 
 
@@ -78,25 +78,25 @@ class DashboardResponseSerializer(serializers.Serializer):
     cycleRemainingDays = serializers.IntegerField()
     cycleStartDate = serializers.DateField()
     cycleEndDate = serializers.DateField()
-    supportLimitKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    budgetLimitKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    cycleActualConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    supportLimitKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    budgetLimitKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    cycleActualConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
     accumulatedCostSYP = serializers.IntegerField()
     predictedBillSYP = serializers.IntegerField()
-    predictedCycleConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    predictedCycleConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
     targetBudgetSYP = serializers.IntegerField() # الحقل المالي المفقود لإنهاء الـ NaN
-    todayActualKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    todayPredictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    avgSubTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    avgBudgetTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2)# 7. DTO الخاص باستقبال قراءة العداد بالواط اللحظي والتوقيت
+    todayActualKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    todayPredictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    avgSubTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    avgBudgetTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)# 7. DTO الخاص باستقبال قراءة العداد بالواط اللحظي والتوقيت
 class ConsumptionUpdateSerializer(serializers.Serializer):
-    watts = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
+    watts = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False, min_value=0.0)
     timestamp = serializers.IntegerField() # نمرره كطابع زمني رقمي (Unix Timestamp) لمرونة المحاكاة والدارة
 
 # 8. DTO الخاص بالحقن الجماعي التراكمي التاريخي للعداد (Bulk Ingestion)
 class BulkIngestionItemSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField()
-    cumulativeWh = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0.0)
+    cumulativeWh = serializers.DecimalField(max_digits=15, decimal_places=2, coerce_to_string=False, min_value=0.0)
 
 class BulkIngestionSerializer(serializers.Serializer):
     readings = serializers.ListField(
@@ -108,19 +108,19 @@ class BulkIngestionSerializer(serializers.Serializer):
 
 class MonthlyHistoryItemSerializer(serializers.Serializer):
     monthName = serializers.CharField()
-    consumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    consumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
 
 class CycleForecastSerializer(serializers.Serializer):
-    predictedMonth1KWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    predictedMonth2KWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    expectedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2)
+    predictedMonth1KWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    predictedMonth2KWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    expectedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2, coerce_to_string=False)
 
 class DailyHistoryItemSerializer(serializers.Serializer):
     date = serializers.DateField()
-    actualKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
-    predictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    actualKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    predictedKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
     isAnomalous = serializers.BooleanField()
-    deviationKWh = serializers.DecimalField(max_digits=10, decimal_places=2)
+    deviationKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
 
 class AnalyticsResponseSerializer(serializers.Serializer):
     meterId = serializers.UUIDField()
@@ -169,9 +169,9 @@ class UnassignMeterSerializer(serializers.Serializer):
 # 15. DTO لتحديث التعرفة وإصدار الشرائح ديناميكياً من الأدمن (UC_15)
 class TariffTierInputSerializer(serializers.Serializer):
     tierNumber = serializers.IntegerField(min_value=1)
-    startKWh = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
-    endKWh = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
-    pricePerKWh = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.0)
+    startKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False, min_value=0.0)
+    endKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False, required=False, allow_null=True)
+    pricePerKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False, min_value=0.0)
 
 class TariffVersionCreateSerializer(serializers.Serializer):
     effectiveDate = serializers.DateField(required=True)
