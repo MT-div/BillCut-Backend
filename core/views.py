@@ -98,7 +98,7 @@ class ProfileUpdateAPIView(APIView):
 
             # تحقق أمني من كلمة المرور الحالية
             if not user.check_password(serializer.validated_data['currentPassword']):
-                return Response({"message": "كلمة المرور الحالية غير صحيحة."}, status=status.HTTP_401_UNAUTHORIZED)
+                return Response({"message": "كلمة المرور الحالية غير صحيحة."}, status=status.HTTP_400_BAD_REQUEST)
 
             UserService.update_profile(user.id, serializer.validated_data['newPhone'], serializer.validated_data.get('newPassword'))
             return Response({"status": "success", "message": "تم تحديث بيانات الملف الشخصي بنجاح."}, status=status.HTTP_200_OK)
@@ -636,7 +636,7 @@ class PhoneUpdateAPIView(APIView):
                         "status": "error",
                         "message": "كلمة المرور الحالية غير صحيحة.",
                     },
-                    status=status.HTTP_401_UNAUTHORIZED,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             UserService.update_phone(
@@ -673,7 +673,7 @@ class PasswordUpdateAPIView(APIView):
                         "status": "error",
                         "message": "كلمة المرور الحالية غير صحيحة.",
                     },
-                    status=status.HTTP_401_UNAUTHORIZED,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             # تحقق مطابقة كلمة المرور الجديدة وتأكيدها على مستوى الخادم أيضاً
