@@ -11,7 +11,7 @@ from django.db import transaction
 from core.services.cache_service import CacheService
 
 # استيراد كلاسات الصلاحية المخصصة التي برمجناها
-from .permissions import IsAdminUserOnly, IsResidentUserOnly
+from .permissions import HasMeterApiKey, IsAdminUserOnly, IsResidentUserOnly
 
 # استيراد النماذج والموديلات
 from .models import Notification, NotificationSettings, User, Meter, UserMeterPreference
@@ -257,8 +257,8 @@ class SetBudgetAPIView(APIView):
 # ==================== 3. واجهات إنترنت الأشياء (مفتوحة حالياً للتبسيط) ====================
 
 class ConsumptionUpdateAPIView(APIView):
-    permission_classes = [AllowAny] # مفتوحة حالياً للتبسيط بانتظام العتاد المادي
-
+    authentication_classes = []  # تعطيل مصادقة JWT المخصصة للمستخدمين
+    permission_classes = [HasMeterApiKey]
     def post(self, request, meter_id):
         serializer = ConsumptionUpdateSerializer(data=request.data)
         if serializer.is_valid():
@@ -272,7 +272,7 @@ class ConsumptionUpdateAPIView(APIView):
 
 
 class BulkIngestionAPIView(APIView):
-    permission_classes = [AllowAny] # مفتوحة للحقن التأسيسي الأول للمحاكي
+    permission_classes = [HasMeterApiKey]
 
     def post(self, request, meter_id):
         serializer = BulkIngestionSerializer(data=request.data)

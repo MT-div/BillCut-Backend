@@ -149,3 +149,5 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,                           # استخدام المفتاح السري للسيرفر للتشفير
     'AUTH_HEADER_TYPES': ('Bearer',),                    # نوع الـ Token المرسل في الـ Header (Bearer Token)
 }
+
+METER_API_KEY = 'billcut-secret-iot-meter-key-2025'

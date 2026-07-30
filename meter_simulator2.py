@@ -11,7 +11,10 @@ BULK_API = f"{SERVER_URL}/api/meter/{METER_ID}/consumption/bulk_backfill/"
 LIVE_API = f"{SERVER_URL}/api/meter/{METER_ID}/consumption/update/"
 
 FILE_PATH = os.path.join('core', 'data', 'channel_1.dat')
-
+HEADERS = {
+    "Content-Type": "application/json",
+    "X-Meter-Api-Key": "billcut-secret-iot-meter-key-2025"
+}
 def load_and_aggregate_data():
     if not os.path.exists(FILE_PATH):
         print(f"عذراً، لم يتم العثور على ملف القراءات في المسار: {FILE_PATH}")
@@ -83,7 +86,7 @@ def start_simulation():
     
     print(f"جاري إرسال طلب الحقن التاريخي لـ {len(bulk_readings)} قراءة تراكمية...")
     try:
-        response = requests.post(BULK_API, json={"readings": bulk_readings})
+        response = requests.post(BULK_API, json={"readings": bulk_readings}, headers=HEADERS)
         if response.status_code == 201:
             print("نجحت عملية التصفير والحقن التاريخي بنجاح مذهل!")
         else:
@@ -123,7 +126,7 @@ def start_simulation():
             }
 
             try:
-                res = requests.post(LIVE_API, json=payload)
+                res = requests.post(LIVE_API, json=payload, headers=HEADERS)
                 if res.status_code == 201:
                     print(f"   [السيرفر] تم الاستلام والتراكم. القراءة الكلية: {res.json()['data']['cumulativeWh']} Wh")
                 else:
