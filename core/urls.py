@@ -11,7 +11,6 @@ from .views import (
     AdminUserDetailAPIView,
     BulkIngestionAPIView,
     ConsumptionUpdateAPIView,
-    CurrentUserAPIView,
     LoginAPIView, 
     AdminCreateUserAPIView,
     MeterAnalyticsAPIView,
@@ -22,18 +21,17 @@ from .views import (
     SetBudgetAPIView,
     UserMeterPreferenceAPIView,
     PasswordUpdateAPIView,
-    PhoneUpdateAPIView
+    PhoneUpdateAPIView,
+    CurrentUserAPIView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
-
-
 
 urlpatterns = [
     # 1. روابط التحقق والمستندات الشخصية للمستخدم والملف الشخصي
     path('auth/login/', LoginAPIView.as_view(), name='api_login'),
+    path('auth/me/', CurrentUserAPIView.as_view(), name='api_auth_me'), # مسار الجلسة الحية
     path('user/profile/update/', ProfileUpdateAPIView.as_view(), name='api_profile_update'),
     path('user/<int:user_id>/notification_settings/', NotificationSettingsAPIView.as_view(), name='api_notification_settings'),
-    
     path("user/phone/update/", PhoneUpdateAPIView.as_view(), name="phone-update"),
     path("user/password/update/", PasswordUpdateAPIView.as_view(), name="password-update"),
     
@@ -48,12 +46,12 @@ urlpatterns = [
     path('meter/<uuid:meter_id>/consumption/update/', ConsumptionUpdateAPIView.as_view(), name='api_consumption_update'),
     path('meter/<uuid:meter_id>/consumption/bulk_backfill/', BulkIngestionAPIView.as_view(), name='api_bulk_backfill'),
     
-    # 4. روابط إدارة حسابات المستخدمين والـ CRUD لمدير النظام (Admin)
+    # 4. روابط إدارة حسابات المستخدمين لمدير النظام (Admin)
     path('admin/users/create/', AdminCreateUserAPIView.as_view(), name='api_admin_create_user'),
     path('admin/users/<int:user_id>/', AdminUserDetailAPIView.as_view(), name='api_admin_user_detail'),
     path('admin/stats/', AdminStatsAPIView.as_view(), name='api_admin_stats'),
 
-    # 5. روابط إدارة العدادات والـ CRUD للأجهزة لمدير النظام (Admin)
+    # 5. روابط إدارة العدادات والعتاد لمدير النظام (Admin)
     path('admin/meters/create/', AdminMeterListCreateAPIView.as_view(), name='api_admin_meter_create'),
     path('admin/meters/<uuid:meter_id>/', AdminMeterDetailAPIView.as_view(), name='api_admin_meter_detail'),
     
@@ -61,15 +59,11 @@ urlpatterns = [
     path('admin/meters/assign/', AdminMeterAssociationAPIView.as_view(), name='api_admin_meter_assign'),
     path('admin/meters/unassign/', AdminMeterUnassignmentAPIView.as_view(), name='api_admin_meter_unassign'),
     
-    # 7. روابط إدارة وتحديث وإصدار التعرفة الكهربائية لمدير النظام (Admin)
+    # 7. روابط إدارة وتحديث وإصدار التعرفة لمدير النظام (Admin)
     path('admin/tariff/update/', AdminTariffUpdateAPIView.as_view(), name='api_admin_tariff_update'),
+    path('admin/tariff/detail/<int:version_id>/', AdminTariffDetailAPIView.as_view(), name='api_admin_tariff_detail'),
     path('admin/system/trigger_daily_tasks/<uuid:meter_id>/', AdminTriggerDailyTasksAPIView.as_view(), name='api_admin_trigger_tasks'),
 
+    # 8. رابط تجديد صلاحية الـ JWT
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    path('admin/stats/', AdminStatsAPIView.as_view(), name='api_admin_stats'),
-    path('admin/tariff/detail/<int:version_id>/', AdminTariffDetailAPIView.as_view(), name='api_admin_tariff_detail'),
-
-    path('auth/me/', CurrentUserAPIView.as_view(), name='api_auth_me'),
-
 ]
