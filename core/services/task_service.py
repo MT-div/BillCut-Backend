@@ -5,14 +5,14 @@ from django.utils.timezone import make_aware
 from django.core.exceptions import ObjectDoesNotExist
 
 from core.models import (
-    Meter, DailyForecast, MonthlyForecast, Notification, 
-    Budget, TariffVersion, ConsumptionReading
+    Meter, DailyForecast, Budget, TariffVersion, ConsumptionReading
 )
 from core.ai_models.daily_model import predict_daily_consumption
-from core.ai_models.monthly_model import predict_monthly_consumption
-from core.services.tariff_service import TariffService
-from core.services.push_service import PushService
-
+from core.events.signals import (
+    anomaly_detected_signal,
+    budget_limit_exceeded_signal,
+    tier_limit_exceeded_signal,
+)
 
 class TaskService:
 
@@ -51,33 +51,30 @@ class TaskService:
         deviation = yesterday_actual_kwh - forecast.predictedConsumptionKWh
         forecast.deviationAmountKWh = max(Decimal('0.00'), deviation)
 
+        # فحص الشذوذ
         if forecast.predictedConsumptionKWh > 0 and (deviation / forecast.predictedConsumptionKWh) > Decimal('0.40'):
             forecast.isAnomalous = True
-            
-            title = "تحذير: عطل كهربائي محتمل!"
-            msg = f"تنبيه: تجاوز استهلاكك الفعلي بالأمس التنبؤ اليومي بمقدار {forecast.deviationAmountKWh} ك.و.س."
-            
-            Notification.objects.create(
-                meter=meter, title=title, message=msg, type="ANOMALY", isRead=False
-            )
-            
-            # فحص التفضيلات وإرسال الـ Push الخارجي حياً!
-            for pref in meter.user_preferences.all():
-                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.anomalyPushEnabled:
-                    PushService.send_push_notification(pref.user, title, msg)
+            forecast.save()
 
-        forecast.save()
+            # إطلاق إشارة الحدث للمراقبين (Observer Pattern)
+            anomaly_detected_signal.send(
+                sender=cls,
+                meter=meter,
+                forecast=forecast
+            )
+        else:
+            forecast.save()
+
         return forecast
 
     @classmethod
     def run_daily_adaptive_notifications(cls, meter_id: str, target_date: date, yesterday_actual_kwh: Decimal) -> None:
         """
-        [UC_10] توليد وإرسال الإشعارات التكيفية اليومية بشكل معزول ومباشر من الداتابيز
-        دون الاعتماد على خدمة واجهات الـ Dashboard.
+        [UC_10] تقييم أرقام يوم أمس المكتمل وإطلاق أحداث الإشعارات التكيفية عبر نمط المراقب
         """
         meter = Meter.objects.get(pk=meter_id)
 
-        # 1. حساب حدود الدورة الكهربائية الثنائية تاريخياً باستخدام calendar.isleap الاحترافي
+        # 1. حساب حدود الدورة الكهربائية الثنائية
         year = target_date.year
         month = target_date.month
 
@@ -105,7 +102,7 @@ class TaskService:
         remaining_days = total_cycle_days - days_passed
         yesterday_div_days = Decimal(str(remaining_days + 1))
 
-        # 2. حساب استهلاك الدورة التراكمي المباشر حتى تاريخ اليوم
+        # 2. حساب استهلاك الدورة التراكمي المباشر
         cycle_start_dt = make_aware(datetime.combine(cycle_start_date, datetime.min.time()))
         target_end_dt = make_aware(datetime.combine(target_date, datetime.max.time()))
 
@@ -119,7 +116,7 @@ class TaskService:
 
         consumption_before_yesterday = cycle_consumption - yesterday_actual_kwh
 
-        # 3. جلب حد الشريحة المدعومة بشكل مباشر
+        # 3. جلب حد الشريحة المدعومة لعام/تاريخ اليوم
         try:
             active_version = TariffVersion.objects.filter(effectiveDate__lte=target_date).order_by('-effectiveDate').first()
             tier1 = active_version.tiers.filter(tierNumber=1).first() if active_version else None
@@ -127,7 +124,7 @@ class TaskService:
         except Exception:
             support_limit = Decimal('300.00')
 
-        # 4. جلب ميزانية العداد بشكل مباشر
+        # 4. جلب ميزانية العداد
         budget_limit = Decimal('0.00')
         try:
             budget = Budget.objects.get(meter=meter)
@@ -146,53 +143,33 @@ class TaskService:
         if avg_budget_target_kwh < 0:
             avg_budget_target_kwh = Decimal('0.00')
 
-        # ==================== أولاً: إشعار الشريحة والدعم (TIER) ====================
+        # ==================== إطلاق إشارات نمط المراقب (Observer Pattern Signals) ====================
+        
+        # 1. إشارة تقييم الشريحة والدعم
         allowed_sub_yesterday = round((support_limit - consumption_before_yesterday) / yesterday_div_days, 2)
         if allowed_sub_yesterday < 0:
             allowed_sub_yesterday = Decimal('0.00')
 
-        if yesterday_actual_kwh > allowed_sub_yesterday:
-            title = "تنبيه: تجاوز معدل الشريحة"
-            message = f"انتبه: لقد تجاوزت بالأمس معدل الاستهلاك اليومي المتاح للبقاء في الدعم (المعدل المتاح كان {allowed_sub_yesterday} ك.و.س، بينما استهلاكك الفعلي كان {yesterday_actual_kwh} ك.و.س). معدلك اليومي الجديد للأيام المتبقية أصبح {avg_sub_target_kwh} ك.و.س."
-            msg_type = "TIER"
-        else:
-            title = "أحسنت: التزام بالدعم"
-            message = f"رائع! حافظت بالأمس على استهلاكك اليومي ضمن نطاق الشريحة المدعومة (المعدل المتاح كان {allowed_sub_yesterday} ك.و.س، واستهلاكك الفعلي كان {yesterday_actual_kwh} ك.و.س). معدلك اليومي المتاح للأيام المتبقية هو {avg_sub_target_kwh} ك.و.س."
-            msg_type = "TIER"
-
-        Notification.objects.create(
+        tier_limit_exceeded_signal.send(
+            sender=cls,
             meter=meter,
-            title=title,
-            message=message,
-            type=msg_type,
-            isRead=False
+            is_exceeded=(yesterday_actual_kwh > allowed_sub_yesterday),
+            yesterday_actual=yesterday_actual_kwh,
+            allowed_target=allowed_sub_yesterday,
+            new_target=avg_sub_target_kwh
         )
-        for pref in meter.user_preferences.all():
-                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.tierPushEnabled:
-                    PushService.send_push_notification(pref.user, title, message)
 
-        # ==================== ثانياً: إشعار الميزانية الشخصية (BUDGET) ====================
+        # 2. إشارة تقييم الميزانية الشخصية
         if budget_limit > 0:
             allowed_budget_yesterday = round((budget_limit - consumption_before_yesterday) / yesterday_div_days, 2)
             if allowed_budget_yesterday < 0:
                 allowed_budget_yesterday = Decimal('0.00')
 
-            if yesterday_actual_kwh > allowed_budget_yesterday:
-                b_title = "تنبيه: تجاوز معدل الميزانية"
-                b_message = f"انتبه: لقد تجاوزت بالأمس معدل الاستهلاك اليومي المتاح للبقاء ضمن ميزانيتك المحددة (المعدل المتاح كان {allowed_budget_yesterday} ك.و.س، بينما استهلاكك الفعلي كان {yesterday_actual_kwh} ك.و.س). معدلك اليومي الجديد المتاح للميزانية هو {avg_budget_target_kwh} ك.و.س."
-                b_msg_type = "BUDGET"
-            else:
-                b_title = "أحسنت: التزام بالميزانية"
-                b_message = f"رائع! حافظت بالأمس على استهلاكك اليومي ضمن نطاق ميزانيتك الشخصية المستهدفة (المعدل المتاح كان {allowed_budget_yesterday} ك.و.س، واستهلاكك الفعلي كان {yesterday_actual_kwh} ك.و.س). معدلك اليومي المتاح للالتزام بالميزانية هو {avg_budget_target_kwh} ك.و.س."
-                b_msg_type = "BUDGET"
-
-            Notification.objects.create(
+            budget_limit_exceeded_signal.send(
+                sender=cls,
                 meter=meter,
-                title=b_title,
-                message=b_message,
-                type=b_msg_type,
-                isRead=False
+                is_exceeded=(yesterday_actual_kwh > allowed_budget_yesterday),
+                yesterday_actual=yesterday_actual_kwh,
+                allowed_target=allowed_budget_yesterday,
+                new_target=avg_budget_target_kwh
             )
-            for pref in meter.user_preferences.all():
-                if hasattr(pref.user, 'notification_settings') and pref.user.notification_settings.budgetPushEnabled:
-                    PushService.send_push_notification(pref.user, b_title, b_message)
