@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    User, Meter, UserMeterPreference, Budget, 
+    DailyConsumptionSummary, User, Meter, UserMeterPreference, Budget, 
     ConsumptionReading, DailyForecast, MonthlyForecast, 
     Notification, NotificationSettings, TariffVersion, TariffTier
 )
@@ -17,3 +17,4 @@ admin.site.register(Notification)
 admin.site.register(NotificationSettings)
 admin.site.register(TariffVersion)
 admin.site.register(TariffTier)
+admin.site.register(DailyConsumptionSummary)

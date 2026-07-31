@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 
 # Create your models here.
@@ -134,3 +135,18 @@ class TariffTier(models.Model):
 
     def __str__(self):
         return f"Tier {self.tierNumber} in Version {self.tariffVersion.versionId} - Price: {self.pricePerKWh} SYP"
+
+
+
+# 12. كلاس التجميع اليومي التراكمي اللحظي
+class DailyConsumptionSummary(models.Model):
+    summaryId = models.BigAutoField(primary_key=True)
+    meter = models.ForeignKey(Meter, on_delete=models.CASCADE, related_name='daily_summaries')
+    date = models.DateField()
+    totalKWh = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        unique_together = ('meter', 'date') # يمنع تكرار ملخص اليوم لنفس العداد
+
+    def __str__(self):
+        return f"Summary for Meter {self.meter.meterId} on {self.date}: {self.totalKWh} kWh"

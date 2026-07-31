@@ -2,10 +2,13 @@ from decimal import Decimal
 from datetime import datetime, date, timedelta
 from django.utils.timezone import make_aware
 from django.core.exceptions import ObjectDoesNotExist
-from core.models import Meter, ConsumptionReading, DailyForecast, MonthlyForecast
+from django.db.models import Sum
+
+from core.models import Meter, DailyForecast, MonthlyForecast, DailyConsumptionSummary
 from core.ai_models.monthly_model import predict_monthly_consumption
 from core.ai_models.daily_model import predict_daily_consumption
 from core.services.tariff_service import TariffService
+
 class AnalyticsService:
 
     @classmethod
@@ -17,9 +20,7 @@ class AnalyticsService:
         else:
             current_date = date.today()
 
-        # =========================================================
-        # 1. حساب وتجميع الاستهلاك الفعلي لآخر 12 شهراً سابقة (kWh)
-        # =========================================================
+        # 1. تجميع الاستهلاك الشهري الفعلي لآخر 12 شهراً مباشرة من DailyConsumptionSummary
         monthly_history = []
         historical_consumptions_for_ai = []
 
@@ -28,26 +29,21 @@ class AnalyticsService:
             next_month = first_day_of_month + timedelta(days=32)
             last_day_of_month = next_month.replace(day=1) - timedelta(days=1)
 
-            start_dt = make_aware(datetime.combine(first_day_of_month, datetime.min.time()))
-            end_dt = make_aware(datetime.combine(last_day_of_month, datetime.max.time()))
+            m_sum = DailyConsumptionSummary.objects.filter(
+                meter=meter,
+                date__gte=first_day_of_month,
+                date__lte=last_day_of_month
+            ).aggregate(total=Sum('totalKWh'))['total']
 
-            start_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__gte=start_dt).order_by('timestamp').first()
-            end_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__lte=end_dt).order_by('timestamp').last()
-
-            m_consumption_kwh = Decimal('0.00')
-            if start_reading and end_reading:
-                m_consumption_wh = end_reading.cumulativeWh - start_reading.cumulativeWh
-                m_consumption_kwh = round(m_consumption_wh / Decimal('1000.00'), 2)
+            m_consumption_kwh = round(m_sum or Decimal('0.00'), 2)
 
             monthly_history.append({
                 "monthName": first_day_of_month.strftime("%B %Y"),
-                "consumptionKWh": round(m_consumption_kwh, 2)
+                "consumptionKWh": m_consumption_kwh
             })
             historical_consumptions_for_ai.append(m_consumption_kwh)
 
-        # =========================================================
-        # 2. حساب وعرض التنبؤ الشهري للدورة الكهربائية الحالية
-        # =========================================================
+        # 2. التنبؤ الشهري
         base_start_date = date(2025, 5, 1)
         delta_days = (current_date - base_start_date).days
         cycle_number = delta_days // 60
@@ -67,19 +63,19 @@ class AnalyticsService:
                 expectedBillSYP=expected_bill
             )
 
-        # =========================================================
-        # 3. تحسين الأداء: تجميع التنبؤات اليومية للـ 15 يوماً في استعلام واحد (Bulk Fetch)
-        # =========================================================
+        # 3. سجل الـ 15 يوماً الأخيرة مباشرة وسريعاً من DailyConsumptionSummary
         fifteen_days_ago = current_date - timedelta(days=14)
         
-        # استعلام واحد فقط بدلاً من 15 استعلاماً منفصلاً
+        # استعلام واحد لجلب التنبؤات والملخصات اليومية
         existing_forecasts = DailyForecast.objects.filter(
-            meter=meter,
-            forecastDate__gte=fifteen_days_ago,
-            forecastDate__lte=current_date
+            meter=meter, forecastDate__gte=fifteen_days_ago, forecastDate__lte=current_date
         )
-        # تحويل النتائج إلى قاموس سريع البحث في الذاكرة Dictionary Lookup (O(1) Time Complexity)
         forecasts_map = {f.forecastDate: f for f in existing_forecasts}
+
+        existing_summaries = DailyConsumptionSummary.objects.filter(
+            meter=meter, date__gte=fifteen_days_ago, date__lte=current_date
+        )
+        summaries_map = {s.date: s.totalKWh for s in existing_summaries}
 
         daily_history = []
         forecasts_to_update = []
@@ -87,18 +83,8 @@ class AnalyticsService:
 
         for i in range(14, -1, -1):
             target_date = current_date - timedelta(days=i)
-            target_start_dt = make_aware(datetime.combine(target_date, datetime.min.time()))
-            target_end_dt = make_aware(datetime.combine(target_date, datetime.max.time()))
+            day_actual_kwh = round(summaries_map.get(target_date, Decimal('0.00')), 2)
 
-            day_start_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__gte=target_start_dt).order_by('timestamp').first()
-            day_end_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__lte=target_end_dt).order_by('timestamp').last()
-
-            day_actual_kwh = Decimal('0.00')
-            if day_start_reading and day_end_reading:
-                day_wh = day_end_reading.cumulativeWh - day_start_reading.cumulativeWh
-                day_actual_kwh = round(day_wh / Decimal('1000.00'), 2)
-
-            # البحث في الذاكرة المخبئية بدلاً من ضرب الداتابيز لكل يوم
             daily_forecast = forecasts_map.get(target_date)
 
             if daily_forecast:
@@ -127,17 +113,14 @@ class AnalyticsService:
 
             daily_history.append({
                 "date": target_date.strftime("%Y-%m-%d"),
-                "actualKWh": round(daily_forecast.actualConsumptionKWh, 2),
-                "predictedKWh": round(daily_forecast.predictedConsumptionKWh, 2),
+                "actualKWh": daily_forecast.actualConsumptionKWh,
+                "predictedKWh": daily_forecast.predictedConsumptionKWh,
                 "isAnomalous": daily_forecast.isAnomalous,
-                "deviationKWh": round(daily_forecast.deviationAmountKWh, 2)
-                 })
-        # حفظ التعديلات والإضافات الجديدة بضربة واحدة في قاعدة البيانات (Bulk Save)
+                "deviationKWh": daily_forecast.deviationAmountKWh
+            })
+
         if forecasts_to_update:
-            DailyForecast.objects.bulk_update(
-                forecasts_to_update, 
-                ['actualConsumptionKWh', 'deviationAmountKWh', 'isAnomalous']
-            )
+            DailyForecast.objects.bulk_update(forecasts_to_update, ['actualConsumptionKWh', 'deviationAmountKWh', 'isAnomalous'])
         if forecasts_to_create:
             DailyForecast.objects.bulk_create(forecasts_to_create)
 

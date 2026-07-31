@@ -1,12 +1,15 @@
 from decimal import Decimal
 from datetime import datetime, date, timedelta
+import calendar
 from django.utils.timezone import make_aware
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from core.models import Meter, ConsumptionReading, Budget, DailyForecast, MonthlyForecast, TariffVersion
-from core.services.cache_service import CacheService
+from django.db.models import Sum
+
+from core.models import Meter, Budget, DailyForecast, MonthlyForecast, TariffVersion, DailyConsumptionSummary
 from core.services.tariff_service import TariffService
-import calendar
+from core.services.cache_service import CacheService
+
 class DashboardService:
 
     @classmethod
@@ -21,11 +24,10 @@ class DashboardService:
         year = current_date.year
         month = current_date.month
 
-        # صياغة الدورات السورية الثابتة
+        # 1. تحديد حدود الدورة الفوترية
         if month in [1, 2]:
-         cycle_start_date = date(year, 1, 1)
-         # استخدام مكتبة بايثون القياسية لحساب السنة الكبيسة بدقة وشكل نظيف
-         cycle_end_date = date(year, 2, 29 if calendar.isleap(year) else 28)
+            cycle_start_date = date(year, 1, 1)
+            cycle_end_date = date(year, 2, 29 if calendar.isleap(year) else 28)
         elif month in [3, 4]:
             cycle_start_date = date(year, 3, 1)
             cycle_end_date = date(year, 4, 30)
@@ -47,53 +49,39 @@ class DashboardService:
         days_remaining = total_cycle_days - days_passed
         yesterday_date = current_date - timedelta(days=1)
 
-        cycle_start_dt = make_aware(datetime.combine(cycle_start_date, datetime.min.time()))
-        yesterday_end_dt = make_aware(datetime.combine(yesterday_date, datetime.max.time()))
-        current_end_dt = make_aware(datetime.combine(current_date, datetime.max.time()))
+        # 2. السرعة الفائقة: حساب استهلاك الدورة التراكمي المباشر بحركة واحدة من DailyConsumptionSummary
+        cycle_sum = DailyConsumptionSummary.objects.filter(
+            meter=meter,
+            date__gte=cycle_start_date,
+            date__lte=current_date
+        ).aggregate(total=Sum('totalKWh'))['total']
 
-        start_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__gte=cycle_start_dt).order_by('timestamp').first()
-        latest_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__lte=current_end_dt).order_by('timestamp').last()
-
-        cycle_consumption_kwh = Decimal('0.00')
-        if start_reading and latest_reading:
-            consumption_wh = latest_reading.cumulativeWh - start_reading.cumulativeWh
-            cycle_consumption_kwh = round(consumption_wh / Decimal('1000.00'), 2)
-
-        # تمرير التوقيت الحالي لـ دالة حساب التكلفة لتعمل ديناميكياً بدقة
+        cycle_consumption_kwh = round(cycle_sum or Decimal('0.00'), 2)
         accumulated_cost_syp = TariffService.calculate_syrian_cost(cycle_consumption_kwh, current_date)
 
-        # الكاش للبيانات الثابتة لليوم باستخدام خدمة الكاش المعزولة
+        # الكاش للبيانات الثابتة
         cache_key_static = CacheService.get_dashboard_key(meter_id, current_date)
         static_data = cache.get(cache_key_static)
 
         if not static_data:
-            yesterday_end_reading = ConsumptionReading.objects.filter(meter=meter, timestamp__lte=yesterday_end_dt).order_by('timestamp').last()
-            yesterday_consumption_kwh = Decimal('0.00')
-            yesterday_end_wh = Decimal('0.00')
-            
-            if yesterday_end_reading:
-                yesterday_end_wh = yesterday_end_reading.cumulativeWh
-                if start_reading:
-                    y_consumption_wh = yesterday_end_wh - start_reading.cumulativeWh
-                    yesterday_consumption_kwh = round(y_consumption_wh / Decimal('1000.00'), 2)
+            # استهلاك الأيام المنقضية حتى الأمس المكتمل مباشرة
+            yesterday_sum = DailyConsumptionSummary.objects.filter(
+                meter=meter,
+                date__gte=cycle_start_date,
+                date__lte=yesterday_date
+            ).aggregate(total=Sum('totalKWh'))['total']
+            yesterday_consumption_kwh = round(yesterday_sum or Decimal('0.00'), 2)
 
             remaining_days_with_today = days_remaining + 1
             div_days = Decimal(str(remaining_days_with_today))
 
             try:
-                active_version = TariffVersion.objects.filter(
-                    effectiveDate__lte=current_date
-                ).order_by('-effectiveDate').first()
-                
-                if not active_version:
-                    raise ObjectDoesNotExist()
-
-                tier1 = active_version.tiers.filter(tierNumber=1).first()
-                support_limit = Decimal(str(tier1.endKWh)) if tier1 else Decimal('300.00')
-            except ObjectDoesNotExist:
+                active_version = TariffVersion.objects.filter(effectiveDate__lte=current_date).order_by('-effectiveDate').first()
+                tier1 = active_version.tiers.filter(tierNumber=1).first() if active_version else None
+                support_limit = Decimal(str(tier1.endKWh)) if tier1 and tier1.endKWh else Decimal('300.00')
+            except Exception:
                 support_limit = Decimal('300.00')
 
-            # استرجاع الميزانية وتصفير الـ NaN
             target_budget_syp = 0
             budget_limit = Decimal('0.00')
             try:
@@ -133,8 +121,6 @@ class DashboardService:
                 "supportLimitKWh": float(support_limit),
                 "budgetLimitKWh": float(budget_limit),
                 "targetBudgetSYP": target_budget_syp,
-                "startReadingWh": float(start_reading.cumulativeWh) if start_reading else 0.0,
-                "yesterdayEndReadingWh": float(yesterday_end_wh),
                 "predictedBillSYP": int(predicted_bill_syp),
                 "predictedCycleConsumptionKWh": float(predicted_cycle_kwh),
                 "todayPredictedKWh": float(today_predicted_kwh),
@@ -143,15 +129,9 @@ class DashboardService:
             }
             cache.set(cache_key_static, static_data, timeout=86400)
 
-        # 4. حساب الاستهلاك الحالي المتغير حياً
-        today_actual_kwh = Decimal('0.00')
-        if latest_reading:
-            yesterday_end_wh = Decimal(str(static_data['yesterdayEndReadingWh']))
-            if yesterday_end_wh == Decimal('0.00') and start_reading:
-                yesterday_end_wh = start_reading.cumulativeWh
-            
-            today_wh = latest_reading.cumulativeWh - yesterday_end_wh
-            today_actual_kwh = round(today_wh / Decimal('1000.00'), 2)
+        # 3. جلب استهلاك اليوم الفعلي المباشر سحرياً من DailyConsumptionSummary
+        today_summary = DailyConsumptionSummary.objects.filter(meter=meter, date=current_date).first()
+        today_actual_kwh = round(today_summary.totalKWh, 2) if today_summary else Decimal('0.00')
 
         return {
             "meterId": meter_id,

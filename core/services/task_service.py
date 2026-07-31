@@ -5,7 +5,7 @@ from django.utils.timezone import make_aware
 from django.core.exceptions import ObjectDoesNotExist
 
 from core.models import (
-    Meter, DailyForecast, Budget, TariffVersion, ConsumptionReading
+    DailyConsumptionSummary, Meter, DailyForecast, Budget, TariffVersion, ConsumptionReading
 )
 from core.ai_models.daily_model import predict_daily_consumption
 from core.events.signals import (
@@ -18,23 +18,12 @@ class TaskService:
 
     @classmethod
     def run_daily_prediction_and_anomaly_detection(cls, meter_id: str, target_date: date) -> DailyForecast:
-        """
-        [UC_8] تشغيل محرك التنبؤ اليومي للغد وكشف شذوذ الأمس عند منتصف الليل
-        """
         meter = Meter.objects.get(pk=meter_id)
         yesterday_date = target_date - timedelta(days=1)
-        day_before_yesterday_date = yesterday_date - timedelta(days=1)
 
-        yesterday_end_dt = make_aware(datetime.combine(yesterday_date, datetime.max.time()))
-        day_before_yesterday_end_dt = make_aware(datetime.combine(day_before_yesterday_date, datetime.max.time()))
-
-        start_reading = meter.readings.filter(timestamp__lte=day_before_yesterday_end_dt).order_by('timestamp').last()
-        end_reading = meter.readings.filter(timestamp__lte=yesterday_end_dt).order_by('timestamp').last()
-
-        yesterday_actual_kwh = Decimal('0.00')
-        if start_reading and end_reading:
-            yesterday_actual_wh = end_reading.cumulativeWh - start_reading.cumulativeWh
-            yesterday_actual_kwh = round(yesterday_actual_wh / Decimal('1000.00'), 2)
+        # قراءة استهلاك أمس المكتمل من جدول التجميع المباشر
+        yesterday_summary = DailyConsumptionSummary.objects.filter(meter=meter, date=yesterday_date).first()
+        yesterday_actual_kwh = round(yesterday_summary.totalKWh, 2) if yesterday_summary else Decimal('0.00')
 
         mock_history = [Decimal('12.50'), Decimal('14.20'), Decimal('11.80')]
         predicted_today = predict_daily_consumption(mock_history)
@@ -51,17 +40,11 @@ class TaskService:
         deviation = yesterday_actual_kwh - forecast.predictedConsumptionKWh
         forecast.deviationAmountKWh = max(Decimal('0.00'), deviation)
 
-        # فحص الشذوذ
         if forecast.predictedConsumptionKWh > 0 and (deviation / forecast.predictedConsumptionKWh) > Decimal('0.40'):
             forecast.isAnomalous = True
             forecast.save()
 
-            # إطلاق إشارة الحدث للمراقبين (Observer Pattern)
-            anomaly_detected_signal.send(
-                sender=cls,
-                meter=meter,
-                forecast=forecast
-            )
+            anomaly_detected_signal.send(sender=cls, meter=meter, forecast=forecast)
         else:
             forecast.save()
 
