@@ -263,22 +263,30 @@ class SetBudgetAPIView(APIView):
 # ==================== 3. واجهات إنترنت الأشياء (مفتوحة حالياً للتبسيط) ====================
 
 class ConsumptionUpdateAPIView(APIView):
-    authentication_classes = []  # تعطيل مصادقة JWT المخصصة للمستخدمين
-
+    authentication_classes = []
     permission_classes = [HasMeterApiKey]
+
     def post(self, request, meter_id):
         serializer = ConsumptionUpdateSerializer(data=request.data)
         if serializer.is_valid():
             dt = make_aware(datetime.fromtimestamp(serializer.validated_data['timestamp']))
             try:
-                reading = IngestionService.process_live_reading(meter_id, serializer.validated_data['watts'], dt)
-                return Response({"status": "success", "message": "تم استلام القراءة اللحظية وتراكمها بنجاح.", "data": {"readingId": reading.readingId, "cumulativeWh": reading.cumulativeWh, "timestamp": reading.timestamp.strftime("%Y-%m-%d %H:%M:%S")}}, status=status.HTTP_201_CREATED)
+                payload = serializer.validated_data['payload']
+                hardware_type = request.headers.get('X-Hardware-Type', None)
+                
+                reading = IngestionService.process_live_reading(meter_id, payload, dt, hardware_type)
+                return Response({
+                    "status": "success", 
+                    "message": "تم استلام القراءة وتطبيق محول العتاد بنجاح.", 
+                    "data": {
+                        "readingId": reading.readingId, 
+                        "cumulativeWh": reading.cumulativeWh, 
+                        "timestamp": reading.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                }, status=status.HTTP_201_CREATED)
             except Exception as e:
-                logger.error(f"Error occurred: {str(e)}", exc_info=True)
-                return Response({"status": "error", "message": f"خطأ برمجي أثناء الاستقبال: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({"status": "error", "message": f"خطأ برلمجي أثناء الاستقبال: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 class BulkIngestionAPIView(APIView):
     permission_classes = [HasMeterApiKey]
 

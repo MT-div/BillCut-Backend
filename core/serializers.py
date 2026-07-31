@@ -90,8 +90,12 @@ class DashboardResponseSerializer(serializers.Serializer):
     avgSubTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
     avgBudgetTargetKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)# 7. DTO الخاص باستقبال قراءة العداد بالواط اللحظي والتوقيت
 class ConsumptionUpdateSerializer(serializers.Serializer):
-    watts = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False, min_value=0.0)
-    timestamp = serializers.IntegerField() # نمرره كطابع زمني رقمي (Unix Timestamp) لمرونة المحاكاة والدارة
+    timestamp = serializers.IntegerField(required=True)
+    # السماح بمرور الحقول الحرة ليقوم المحول بفحصها تلقائياً
+    def to_internal_value(self, data):
+        internal_val = super().to_internal_value(data)
+        internal_val['payload'] = data # نمرر القاموس كاملاً للمحول
+        return internal_val
 
 # 8. DTO الخاص بالحقن الجماعي التراكمي التاريخي للعداد (Bulk Ingestion)
 class BulkIngestionItemSerializer(serializers.Serializer):
