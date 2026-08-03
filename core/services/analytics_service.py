@@ -2,12 +2,13 @@ from decimal import Decimal
 from datetime import datetime, date, timedelta
 from django.utils.timezone import make_aware
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.cache import cache
 from django.db.models import Sum
 
 from core.models import Meter, DailyForecast, MonthlyForecast, DailyConsumptionSummary
-from core.ai_models.monthly_model import predict_monthly_consumption
 from core.ai_models.daily_model import predict_daily_consumption
-from core.services.tariff_service import TariffService
+from core.services.task_service import TaskService
+from core.services.cache_service import CacheService
 
 class AnalyticsService:
 
@@ -20,53 +21,67 @@ class AnalyticsService:
         else:
             current_date = date.today()
 
-        # 1. تجميع الاستهلاك الشهري الفعلي لآخر 12 شهراً مباشرة من DailyConsumptionSummary
-        monthly_history = []
-        historical_consumptions_for_ai = []
+        year = current_date.year
+        month = current_date.month
 
-        for i in range(12, 0, -1):
-            first_day_of_month = (current_date - timedelta(days=i*30)).replace(day=1)
-            next_month = first_day_of_month + timedelta(days=32)
-            last_day_of_month = next_month.replace(day=1) - timedelta(days=1)
+        # ---------------------------------------------------------------------
+        # 1. قراءة البيانات التاريخية والتنبؤية الثابتة لليوم من الكاش (Cache Lookup)
+        # ---------------------------------------------------------------------
+        cache_key_analytics = CacheService.get_analytics_key(meter_id, current_date)
+        analytics_static = cache.get(cache_key_analytics)
 
-            m_sum = DailyConsumptionSummary.objects.filter(
-                meter=meter,
-                date__gte=first_day_of_month,
-                date__lte=last_day_of_month
-            ).aggregate(total=Sum('totalKWh'))['total']
+        if not analytics_static:
+            # أ. حساب السجل التاريخي لآخر 12 شهراً تقويمياً من DailyConsumptionSummary
+            monthly_history = []
+            for i in range(12, 0, -1):
+                m_start, m_end = TaskService.get_exact_prior_month_range(current_date, i)
 
-            m_consumption_kwh = round(m_sum or Decimal('0.00'), 2)
+                m_sum = DailyConsumptionSummary.objects.filter(
+                    meter=meter, date__gte=m_start, date__lte=m_end
+                ).aggregate(total=Sum('totalKWh'))['total']
 
-            monthly_history.append({
-                "monthName": first_day_of_month.strftime("%B %Y"),
-                "consumptionKWh": m_consumption_kwh
-            })
-            historical_consumptions_for_ai.append(m_consumption_kwh)
+                m_consumption_kwh = round(m_sum or Decimal('0.00'), 2)
 
-        # 2. التنبؤ الشهري
-        base_start_date = date(2025, 5, 1)
-        delta_days = (current_date - base_start_date).days
-        cycle_number = delta_days // 60
-        cycle_start_date = base_start_date + timedelta(days=cycle_number * 60)
+                monthly_history.append({
+                    "monthName": m_start.strftime("%B %Y"),
+                    "consumptionKWh": m_consumption_kwh
+                })
 
-        try:
-            monthly_forecast = MonthlyForecast.objects.get(meter=meter, cycleStartDate=cycle_start_date)
-        except ObjectDoesNotExist:
-            p1, p2 = predict_monthly_consumption(historical_consumptions_for_ai)
-            expected_bill = TariffService.calculate_syrian_cost(p1 + p2)
-            
-            monthly_forecast = MonthlyForecast.objects.create(
-                meter=meter,
-                cycleStartDate=cycle_start_date,
-                predictedMonth1KWh=p1,
-                predictedMonth2KWh=p2,
-                expectedBillSYP=expected_bill
-            )
+            # ب. جلب التنبؤ الشهري الموحد المحدث من TaskService
+            if month in [1, 2]:
+                cycle_start_date = date(year, 1, 1)
+            elif month in [3, 4]:
+                cycle_start_date = date(year, 3, 1)
+            elif month in [5, 6]:
+                cycle_start_date = date(year, 5, 1)
+            elif month in [7, 8]:
+                cycle_start_date = date(year, 7, 1)
+            elif month in [9, 10]:
+                cycle_start_date = date(year, 9, 1)
+            else:
+                cycle_start_date = date(year, 11, 1)
 
-        # 3. سجل الـ 15 يوماً الأخيرة مباشرة وسريعاً من DailyConsumptionSummary
+            try:
+                monthly_forecast = MonthlyForecast.objects.get(meter=meter, cycleStartDate=cycle_start_date)
+            except ObjectDoesNotExist:
+                monthly_forecast = TaskService.run_monthly_cycle_prediction(meter_id, current_date)
+
+            analytics_static = {
+                "monthlyHistory": monthly_history,
+                "currentCycleForecast": {
+                    "predictedMonth1KWh": round(monthly_forecast.predictedMonth1KWh, 2),
+                    "predictedMonth2KWh": round(monthly_forecast.predictedMonth2KWh, 2),
+                    "expectedBillSYP": int(monthly_forecast.expectedBillSYP)
+                }
+            }
+            # حفظ السجل التاريخي والتنبؤ الكاش لمدة 24 ساعة
+            cache.set(cache_key_analytics, analytics_static, timeout=86400)
+
+        # ---------------------------------------------------------------------
+        # 2. سجل الـ 15 يوماً الأخيرة الشبه حي المباشر
+        # ---------------------------------------------------------------------
         fifteen_days_ago = current_date - timedelta(days=14)
         
-        # استعلام واحد لجلب التنبؤات والملخصات اليومية
         existing_forecasts = DailyForecast.objects.filter(
             meter=meter, forecastDate__gte=fifteen_days_ago, forecastDate__lte=current_date
         )
@@ -126,11 +141,7 @@ class AnalyticsService:
 
         return {
             "meterId": meter_id,
-            "monthlyHistory": monthly_history,
-            "currentCycleForecast": {
-                "predictedMonth1KWh": round(monthly_forecast.predictedMonth1KWh, 2),
-                "predictedMonth2KWh": round(monthly_forecast.predictedMonth2KWh, 2),
-                "expectedBillSYP": int(monthly_forecast.expectedBillSYP)
-            },
+            "monthlyHistory": analytics_static["monthlyHistory"],
+            "currentCycleForecast": analytics_static["currentCycleForecast"],
             "dailyHistory": daily_history
         }
