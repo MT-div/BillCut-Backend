@@ -114,11 +114,11 @@ class MonthlyHistoryItemSerializer(serializers.Serializer):
     monthName = serializers.CharField()
     consumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
 
-class CycleForecastSerializer(serializers.Serializer):
-    predictedMonth1KWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
-    predictedMonth2KWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
-    expectedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2, coerce_to_string=False)
 
+class CycleForecastSerializer(serializers.Serializer):
+    totalCycleConsumptionKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    expectedBillSYP = serializers.DecimalField(max_digits=12, decimal_places=2, coerce_to_string=False)
+    
 class DailyHistoryItemSerializer(serializers.Serializer):
     date = serializers.DateField()
     actualKWh = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)

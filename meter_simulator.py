@@ -1,3 +1,4 @@
+from linecache import cache
 import os
 import time
 import requests
@@ -77,6 +78,7 @@ def load_and_aggregate_data():
     return bulk_payload, last_processed_orig_ts, time_offset
 
 def start_simulation():
+    cache.clear()
     # 1. مرحلة الحقن التاريخي التلقائي والتصفير الفوري لقاعدة البيانات والكاش
     payload_data = load_and_aggregate_data()
     if not payload_data:

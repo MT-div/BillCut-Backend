@@ -69,8 +69,7 @@ class AnalyticsService:
             analytics_static = {
                 "monthlyHistory": monthly_history,
                 "currentCycleForecast": {
-                    "predictedMonth1KWh": round(monthly_forecast.predictedMonth1KWh, 2),
-                    "predictedMonth2KWh": round(monthly_forecast.predictedMonth2KWh, 2),
+                    "totalCycleConsumptionKWh": round(monthly_forecast.total_cycle_consumption_kwh, 2),
                     "expectedBillSYP": int(monthly_forecast.expectedBillSYP)
                 }
             }

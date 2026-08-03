@@ -15,7 +15,6 @@ class CacheService:
 
     @classmethod
     def get_analytics_key(cls, meter_id: str, target_date: date) -> str:
-        """توليد مفتاح الكاش للبيانات التاريخية والتنبؤية الثابتة لشاشة التحليلات"""
         date_str = target_date.strftime('%Y%m%d')
         return f"{cls.STATIC_ANALYTICS_PREFIX}_{meter_id}_{date_str}"
 
@@ -29,6 +28,10 @@ class CacheService:
         cache.delete(cls.get_analytics_key(meter_id, target_date))
 
     @classmethod
+    def invalidate_meter_dashboard_cache(cls, meter_id: str, target_date: date = None) -> None:
+        """دالة توافقية لتصفية الكاش لتفادي أية أخطاء استدعاء قديمة"""
+        cls.invalidate_meter_cache(meter_id, target_date)
+
+    @classmethod
     def invalidate_all_caches(cls) -> None:
-        """تستخدم فقط عند تغيير التعرفة الحكومية العامة"""
         cache.clear()

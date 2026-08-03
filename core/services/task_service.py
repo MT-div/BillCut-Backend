@@ -15,6 +15,7 @@ from core.events.signals import (
     tier_limit_exceeded_signal,
 )
 from core.services.tariff_service import TariffService
+from django.db.models import Sum
 
 class TaskService:
 
@@ -229,7 +230,7 @@ class TaskService:
             # استعلام مجموع الكيلوواط الساعي لهذا الشهر التقويمي
             m_sum = DailyConsumptionSummary.objects.filter(
                 meter=meter, date__gte=m_start, date__lte=m_end
-            ).aggregate(total=sum('totalKWh'))['total']
+            ).aggregate(total=Sum('totalKWh'))['total']
 
             if m_sum is not None:
                 historical_months.append(float(m_sum))
@@ -256,7 +257,7 @@ class TaskService:
                 # 1. استرجاع إجمالي الاستهلاك الفعلي والحقيقي المكتمل للشهر الأول كامل
                 actual_m1_sum = DailyConsumptionSummary.objects.filter(
                     meter=meter, date__gte=cycle_start_date, date__lte=month1_end_date
-                ).aggregate(total=sum('totalKWh'))['total']
+                ).aggregate(total=Sum('totalKWh'))['total']
 
                 actual_m1 = round(actual_m1_sum or Decimal('0.00'), 2)
                 monthly_forecast.actualMonth1KWh = actual_m1
