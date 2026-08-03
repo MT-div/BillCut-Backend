@@ -96,11 +96,12 @@ class DashboardService:
 
             try:
                 monthly_forecast = MonthlyForecast.objects.get(meter=meter, cycleStartDate=cycle_start_date)
-                predicted_bill_syp = monthly_forecast.expectedBillSYP
-                predicted_cycle_kwh = monthly_forecast.predictedMonth1KWh + monthly_forecast.predictedMonth2KWh
             except ObjectDoesNotExist:
-                predicted_bill_syp = accumulated_cost_syp * (Decimal(str(total_cycle_days)) / Decimal(str(days_passed))) if days_passed > 0 else Decimal('0.00')
-                predicted_cycle_kwh = Decimal('445.90')
+                from core.services.task_service import TaskService
+                monthly_forecast = TaskService.run_monthly_cycle_prediction(meter_id, current_date)
+
+            predicted_bill_syp = monthly_forecast.expectedBillSYP
+            predicted_cycle_kwh = monthly_forecast.total_cycle_consumption_kwh
 
             today_predicted_kwh = Decimal('0.00')
             try:

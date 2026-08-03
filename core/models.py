@@ -113,6 +113,17 @@ class MonthlyForecast(models.Model):
     class Meta:
         unique_together = ('meter', 'cycleStartDate')
 
+    @property
+    def total_cycle_consumption_kwh(self):
+        """
+        خاصية ذكية تحسب إجمالي الدورة الفعلي والمتوقع تلقائياً:
+        - في الشهر الأول: ترجع P1 + P2
+        - في الشهر الثاني: ترجع A1 الفعلي + P2 التنبؤي المحدث!
+        """
+        if self.actualMonth1KWh is not None:
+            return Decimal(str(self.actualMonth1KWh)) + Decimal(str(self.predictedMonth2KWh))
+        return Decimal(str(self.predictedMonth1KWh)) + Decimal(str(self.predictedMonth2KWh))
+
     def __str__(self):
         return f"Cycle starting {self.cycleStartDate} - Expected Bill: {self.expectedBillSYP} SYP"
 
