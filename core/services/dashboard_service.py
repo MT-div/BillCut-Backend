@@ -106,9 +106,12 @@ class DashboardService:
             today_predicted_kwh = Decimal('0.00')
             try:
                 daily_forecast = DailyForecast.objects.get(meter=meter, forecastDate=current_date)
-                today_predicted_kwh = daily_forecast.predictedConsumptionKWh
             except ObjectDoesNotExist:
-                today_predicted_kwh = Decimal('12.50')
+                from core.services.task_service import TaskService
+                # استدعاء تشغيل محرك التنبؤ اليومي بالذكاء الاصطناعي فوراً لليوم الحالي!
+                daily_forecast = TaskService.run_daily_prediction_and_anomaly_detection(meter_id, current_date)
+
+            today_predicted_kwh = daily_forecast.predictedConsumptionKWh
 
             avg_sub_target_kwh = round((support_limit - yesterday_consumption_kwh) / div_days, 2)
             if avg_sub_target_kwh < 0:

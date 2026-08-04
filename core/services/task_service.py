@@ -24,12 +24,22 @@ class TaskService:
         meter = Meter.objects.get(pk=meter_id)
         yesterday_date = target_date - timedelta(days=1)
 
-        # قراءة استهلاك أمس المكتمل من جدول التجميع المباشر
+        # 1. قراءة استهلاك أمس المكتمل من جدول التجميع
         yesterday_summary = DailyConsumptionSummary.objects.filter(meter=meter, date=yesterday_date).first()
         yesterday_actual_kwh = round(yesterday_summary.totalKWh, 2) if yesterday_summary else Decimal('0.00')
 
-        mock_history = [Decimal('12.50'), Decimal('14.20'), Decimal('11.80')]
-        predicted_today = predict_daily_consumption(mock_history)
+        # 2. جلب سجل استهلاك آخر 60 يوماً من DailyConsumptionSummary لتغذية النموذج اليومي
+        sixty_days_ago = target_date - timedelta(days=60)
+        historical_60_summaries = DailyConsumptionSummary.objects.filter(
+            meter=meter,
+            date__gte=sixty_days_ago,
+            date__lte=yesterday_date
+        ).order_by('date')
+
+        historical_60_days = [float(s.totalKWh) for s in historical_60_summaries]
+
+        # 3. استدعاء نموذج الذكاء الاصطناعي اليومي
+        predicted_today = predict_daily_consumption(historical_60_days)
 
         forecast, created = DailyForecast.objects.update_or_create(
             meter=meter,
@@ -43,6 +53,7 @@ class TaskService:
         deviation = yesterday_actual_kwh - forecast.predictedConsumptionKWh
         forecast.deviationAmountKWh = max(Decimal('0.00'), deviation)
 
+        # فحص الشذوذ
         if forecast.predictedConsumptionKWh > 0 and (deviation / forecast.predictedConsumptionKWh) > Decimal('0.40'):
             forecast.isAnomalous = True
             forecast.save()

@@ -110,8 +110,17 @@ class AnalyticsService:
                         daily_forecast.isAnomalous = True
                     forecasts_to_update.append(daily_forecast)
             else:
-                mock_history = [Decimal('12.50')]
-                pred_daily = predict_daily_consumption(mock_history)
+                # جلب سجل الـ 60 يوماً التاريخية المتاحة لهذا اليوم بدقة من DailyConsumptionSummary
+                target_60_start = target_date - timedelta(days=60)
+                hist_60_summaries = DailyConsumptionSummary.objects.filter(
+                    meter=meter, date__gte=target_60_start, date__lt=target_date
+                ).order_by('date')
+                
+                hist_60_days = [float(s.totalKWh) for s in hist_60_summaries]
+
+                # استدعاء التنبؤ اليومي الحقيقي
+                pred_daily = predict_daily_consumption(hist_60_days)
+                
                 deviation = day_actual_kwh - pred_daily
                 is_anomalous = pred_daily > 0 and (deviation / pred_daily) > Decimal('0.40')
 
