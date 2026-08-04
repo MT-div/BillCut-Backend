@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Notification, TariffTier, TariffVersion, User, Meter, UserMeterPreference, Budget, NotificationSettings
+from .models import AnomalyThreshold, Notification, TariffTier, TariffVersion, User, Meter, UserMeterPreference, Budget, NotificationSettings
 
 # 1. DTO الخاص باسترجاع بيانات المستخدم الأساسية
 class UserSerializer(serializers.ModelSerializer):
@@ -214,3 +214,13 @@ class TariffVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = TariffVersion
         fields = ['versionId', 'effectiveDate', 'tiers']
+
+
+class AnomalyThresholdSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AnomalyThreshold
+        fields = [
+            'thresholdId', 'targetRegionName', 'baseMeanKWh', 
+            'baseThresholdKWh', 'targetRegionMeanKWh', 
+            'calculatedThresholdKWh', 'isActive', 'updatedAt'
+        ]

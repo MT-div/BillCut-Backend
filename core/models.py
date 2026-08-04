@@ -192,3 +192,31 @@ class DailyConsumptionSummary(models.Model):
 
     def __str__(self):
         return f"Summary for Meter {self.meter.meterId} on {self.date}: {self.totalKWh} kWh"
+
+
+# 13. كلاس العتبة التكيفية لكشف الشذوذ والأعطال (Scale-Invariant Threshold)
+class AnomalyThreshold(models.Model):
+    thresholdId = models.BigAutoField(primary_key=True)
+    targetRegionName = models.CharField(max_length=100, default="المنطقة المحلية / سوريا")
+    baseMeanKWh = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('10.25'))
+    baseThresholdKWh = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('7.00'))
+    targetRegionMeanKWh = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('23.16'))
+    calculatedThresholdKWh = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('15.80'))
+    isActive = models.BooleanField(default=True)
+    updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['isActive', '-updatedAt'], name='threshold_active_idx'),
+        ]
+
+    @classmethod
+    def get_active_threshold_kwh(cls) -> Decimal:
+        """جلب قيمة العتبة التكيفية الفعالة حالياً في النظام"""
+        active = cls.objects.filter(isActive=True).order_by('-updatedAt').first()
+        if active:
+            return active.calculatedThresholdKWh
+        return Decimal('15.80') # قيمة أمان افتراضية للمنطقة المحلية
+
+    def __str__(self):
+        return f"Threshold for {self.targetRegionName}: {self.calculatedThresholdKWh} kWh (Active: {self.isActive})"

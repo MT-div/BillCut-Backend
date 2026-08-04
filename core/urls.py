@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    AdminAnomalyThresholdAPIView,
     AdminMeterAssociationAPIView,
     AdminMeterDetailAPIView,
     AdminMeterListCreateAPIView,
@@ -70,4 +71,8 @@ urlpatterns = [
   
     # 9. رابط حفظ الـ pushToken للمستخدم
     path('user/push_token/', SavePushTokenAPIView.as_view(), name='api_save_push_token'),
+
+    
+    path('admin/anomaly_threshold/', AdminAnomalyThresholdAPIView.as_view(), name='api_admin_anomaly_threshold'),
+
 ]

@@ -6,7 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from core.ai_models.monthly_model import predict_monthly_consumption
 from core.models import (
-    DailyConsumptionSummary, Meter, DailyForecast, Budget, MonthlyForecast, TariffVersion, ConsumptionReading
+    AnomalyThreshold, DailyConsumptionSummary, Meter, DailyForecast, Budget, MonthlyForecast, TariffVersion, ConsumptionReading
 )
 from core.ai_models.daily_model import predict_daily_consumption
 from core.events.signals import (
@@ -50,11 +50,14 @@ class TaskService:
             }
         )
 
-        deviation = yesterday_actual_kwh - forecast.predictedConsumptionKWh
-        forecast.deviationAmountKWh = max(Decimal('0.00'), deviation)
+        absolute_error = abs(yesterday_actual_kwh - forecast.predictedConsumptionKWh)
+        forecast.deviationAmountKWh = absolute_error
 
-        # فحص الشذوذ
-        if forecast.predictedConsumptionKWh > 0 and (deviation / forecast.predictedConsumptionKWh) > Decimal('0.40'):
+        # جلب العتبة التكيّفية الفعالة حالياً في النظام
+        active_threshold_kwh = AnomalyThreshold.get_active_threshold_kwh()
+
+        # كشف الشذوذ والعطل إذا تجاوز الخطأ المطلق العتبة الديناميكية المحسوبة
+        if absolute_error >= active_threshold_kwh:
             forecast.isAnomalous = True
             forecast.save()
 
