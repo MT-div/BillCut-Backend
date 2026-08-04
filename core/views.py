@@ -2,6 +2,9 @@ import io
 import base64
 import numpy as np
 import matplotlib
+from django.db.models import Sum
+
+from core.services.task_service import TaskService
 matplotlib.use('Agg') # تشغيل وضع Headless السيرفري لـ Matplotlib
 import matplotlib.pyplot as plt
 from decimal import Decimal
@@ -21,7 +24,7 @@ from core.services.cache_service import CacheService
 from .permissions import HasMeterApiKey, IsAdminUserOnly, IsResidentUserOnly
 
 # استيراد النماذج والموديلات
-from .models import AnomalyThreshold, DailyForecast, Notification, NotificationSettings, User, Meter, UserMeterPreference
+from .models import AnomalyThreshold, DailyConsumptionSummary, DailyForecast, Notification, NotificationSettings, User, Meter, UserMeterPreference
 from core.services.threshold_scaling_service import ThresholdScalingService
 
 # استيراد عقود البيانات (الـ DTOs)
@@ -727,17 +730,36 @@ class AdminStatsAPIView(APIView):
         try:
             users_count = User.objects.filter(role='RESIDENT').count()
             meters_count = Meter.objects.count()
+
+            # حساب إجمالي استهلاك جميع المشتركين والعدادات في الدولة/المنظومة لآخر 12 شهراً
+            current_date = date.today()
+            system_monthly_history = []
+
+            for i in range(12, 0, -1):
+                m_start, m_end = TaskService.get_exact_prior_month_range(current_date, i)
+
+                # استعلام إجمالي كافة المشتركين (بدون الفلترة بعداد محدد)
+                m_sum = DailyConsumptionSummary.objects.filter(
+                    date__gte=m_start,
+                    date__lte=m_end
+                ).aggregate(total=Sum('totalKWh'))['total']
+
+                system_monthly_history.append({
+                    "monthName": m_start.strftime("%B %Y"),
+                    "consumptionKWh": round(m_sum or Decimal('0.00'), 2)
+                })
+
             return Response({
                 "status": "success",
                 "data": {
                     "usersCount": users_count,
-                    "metersCount": meters_count
+                    "metersCount": meters_count,
+                    "systemMonthlyHistory": system_monthly_history
                 }
             }, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f"Error occurred: {str(e)}", exc_info=True)
-            return Response({"message": f"تعذر استرجاع الإحصائيات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            logger.error(f"Error fetching admin stats: {str(e)}")
+            return Response({"status": "error", "message": f"تعذر استرجاع الإحصائيات: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CurrentUserAPIView(APIView):
     permission_classes = [IsAuthenticated]
