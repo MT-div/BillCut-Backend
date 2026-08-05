@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     AdminAnomalyThresholdAPIView,
+    AdminChangeUserRoleAPIView,
     AdminMeterAssociationAPIView,
     AdminMeterDetailAPIView,
     AdminMeterListCreateAPIView,
@@ -85,5 +86,9 @@ urlpatterns = [
     path('admin/subscription_requests/', AdminSubscriptionRequestListAPIView.as_view(), name='api_admin_sub_request_list'),
     path('admin/subscription_requests/<int:request_id>/', AdminSubscriptionRequestDetailAPIView.as_view(), name='api_admin_sub_request_detail'),
     path('admin/subscription_requests/provision/', AdminProvisionSubscriptionRequestAPIView.as_view(), name='api_admin_sub_request_provision'),
+
+
+
+    path('admin/users/change_role/', AdminChangeUserRoleAPIView.as_view(), name='api_admin_change_user_role'),
 
 ]

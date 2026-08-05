@@ -6,15 +6,20 @@ from django.utils import timezone
 
 # 1. كلاس المستخدم المخصص الممتد من كلاس دجانغو الأساسي (Custom User Model)
 class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('SUPER_ADMIN', 'Super Admin'),
+        ('ADMIN', 'Admin'),
+        ('RESIDENT', 'Resident'),
+    ]
+
     fullName = models.CharField(max_length=255)
     phoneNumber = models.CharField(max_length=15, unique=True)
-    role = models.CharField(max_length=20, choices=[('ADMIN', 'Admin'), ('RESIDENT', 'Resident')], default='RESIDENT')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='RESIDENT')
     createdAt = models.DateTimeField(auto_now_add=True)
     pushToken = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return f"{self.fullName} ({self.role})"
-
 
 # 2. كلاس تفضيلات الإشعارات المرتبط بالمستهلك علاقة 1:1
 class NotificationSettings(models.Model):

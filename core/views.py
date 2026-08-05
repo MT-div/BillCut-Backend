@@ -22,7 +22,7 @@ from django.db import transaction
 from core.services.cache_service import CacheService
 
 # استيراد كلاسات الصلاحية المخصصة التي برمجناها
-from .permissions import HasMeterApiKey, IsAdminUserOnly, IsResidentUserOnly
+from .permissions import HasMeterApiKey, IsAdminOrSuperAdmin, IsResidentUserOnly, IsSuperAdminUserOnly
 
 # استيراد النماذج والموديلات
 from .models import AnomalyThreshold, DailyConsumptionSummary, DailyForecast, Notification, NotificationSettings, SubscriptionRequest, User, Meter, UserMeterPreference
@@ -321,24 +321,31 @@ class BulkIngestionAPIView(APIView):
 from django.db.models import Q # استيراد مكوّن الاستعلامات المعقدة Q لفلترة الجداول
 
 class AdminCreateUserAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         search_query = request.query_params.get('search', None)
-        queryset = User.objects.filter(role='RESIDENT').order_by('-createdAt')
-        
-        # 1. تطبيق الفلترة السحابية الآمنة أولاً إن وجدت
+        role_filter = request.query_params.get('role', None)
+
+        # 1. إرجاع جميع المستخدمين دون استثناء (RESIDENT, ADMIN, SUPER_ADMIN)
+        queryset = User.objects.all().order_by('-createdAt')
+
+        # 2. فلترة الدور إذا طلبها الـ SUPER_ADMIN
+        if role_filter and role_filter in ['RESIDENT', 'ADMIN', 'SUPER_ADMIN']:
+            queryset = queryset.filter(role=role_filter)
+
+        # 3. الفلترة بالبحث
         if search_query:
             queryset = queryset.filter(
                 Q(fullName__icontains=search_query) | 
-                Q(phoneNumber__icontains=search_query)
+                Q(phoneNumber__icontains=search_query) |
+                Q(username__icontains=search_query)
             )
-            
-        # 2. تطبيق الترقيم والتحميل التدريجي (Pagination) بمعدل 10 مستخدمين في الصفحة
+
         paginator = LimitOffsetPagination()
         paginator.default_limit = 10
         page = paginator.paginate_queryset(queryset, request, view=self)
-        
+
         if page is not None:
             serializer = UserSerializer(page, many=True)
             return paginator.get_paginated_response(serializer.data)
@@ -346,7 +353,7 @@ class AdminCreateUserAPIView(APIView):
         serializer = UserSerializer(queryset, many=True)
         return Response({
             "status": "success",
-            "message": "تم استرداد قائمة المستهلكين بنجاح.",
+            "message": "تم استرداد قائمة المستخدمين بنجاح.",
             "data": serializer.data
         }, status=status.HTTP_200_OK)
 
@@ -357,8 +364,46 @@ class AdminCreateUserAPIView(APIView):
             user, temp_password = UserService.create_resident_user(serializer.validated_data['fullName'], serializer.validated_data['phoneNumber'])
             return Response({"status": "success", "message": "تم إنشاء الحساب بنجاح.", "data": {"username": user.username, "fullName": user.fullName, "phoneNumber": user.phoneNumber, "temporaryPassword": temp_password}}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+class AdminChangeUserRoleAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsSuperAdminUserOnly] # محصنة حصراً للـ SUPER_ADMIN
+
+    def post(self, request):
+        target_user_id = request.data.get('userId')
+        new_role = request.data.get('newRole')
+
+        if not target_user_id or not new_role or new_role not in ['RESIDENT', 'ADMIN', 'SUPER_ADMIN']:
+            return Response({"status": "error", "message": "بيانات الدور أو المستخدم غير صالحة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target_user = User.objects.get(pk=target_user_id)
+
+            # قيد الأمان السيادي: يمنع الـ SUPER_ADMIN من تجريد نفسه إذا كان هو صاحب التوكن الحالي
+            if target_user.id == request.user.id and new_role != 'SUPER_ADMIN':
+                return Response({"status": "error", "message": "عذراً، يمنع تجريد صلاحياتك السيادية بنفسك لحماية النظام."}, status=status.HTTP_403_FORBIDDEN)
+
+            target_user.role = new_role
+            target_user.save()
+
+            # مسح الكاش لضمان مزامنة الجلسة فوراً
+            from django.core.cache import cache
+            cache.clear()
+
+            return Response({
+                "status": "success",
+                "message": f"تم تعديل صلاحية المستخدم ({target_user.fullName}) إلى ({target_user.get_role_display()}) بنجاح.",
+                "data": {
+                    "userId": target_user.id,
+                    "newRole": target_user.role
+                }
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"status": "error", "message": "المستخدم غير موجود."}, status=status.HTTP_404_NOT_FOUND)
+
 class AdminUserDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def put(self, request, user_id):
         try:
@@ -379,7 +424,7 @@ class AdminUserDetailAPIView(APIView):
 
 
 class AdminMeterListCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         # [UC_14 -> Read] جلب قائمة العدادات المرقّمة والمفلترة بالبحث سحابياً لمدير النظام
@@ -419,7 +464,7 @@ class AdminMeterListCreateAPIView(APIView):
 
 
 class AdminMeterDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def put(self, request, meter_id):
         # [UC_14 -> Update] تعديل بيانات العداد (مثل معرّفه الفيزيائي) من الأدمن
@@ -460,7 +505,7 @@ class AdminMeterDetailAPIView(APIView):
         except Meter.DoesNotExist:
             return Response({"message": f"العداد غير موجود."}, status=status.HTTP_404_NOT_FOUND)
 class AdminMeterAssociationAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def post(self, request):
         serializer = AssignMeterSerializer(data=request.data)
@@ -475,7 +520,7 @@ class AdminMeterAssociationAPIView(APIView):
 
 
 class AdminMeterUnassignmentAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def post(self, request):
         serializer = UnassignMeterSerializer(data=request.data)
@@ -493,7 +538,7 @@ from core.models import TariffVersion, TariffTier
 from .serializers import TariffVersionSerializer, TariffVersionCreateSerializer
 
 class AdminTariffUpdateAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         # [UC_15 -> Read] جلب قائمة بجميع إصدارات التعرفة والشرائح التابعة لها لجدول الأدمن
@@ -522,7 +567,7 @@ class AdminTariffUpdateAPIView(APIView):
 
 
 class AdminTariffDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def put(self, request, version_id):
         # [UC_15 -> Update] تعديل تعرفة مستقبلية لم تطبق بعد (يُمنع تعديل التعرفة السارية حالياً تاريخياً!)
@@ -588,7 +633,7 @@ class AdminTariffDetailAPIView(APIView):
             return Response({"message": "إصدار التعرفة غير موجود."}, status=status.HTTP_404_NOT_FOUND)
 
 class AdminTriggerDailyTasksAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def post(self, request, meter_id):
         target_date_str = request.data.get('date', None)
@@ -725,7 +770,7 @@ class PasswordUpdateAPIView(APIView):
 
 
 class AdminStatsAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         try:
@@ -880,7 +925,7 @@ def generate_error_density_chart_base64(active_threshold):
 
 
 class AdminAnomalyThresholdAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         active_threshold = AnomalyThreshold.objects.filter(isActive=True).order_by('-updatedAt').first()
@@ -963,7 +1008,7 @@ class PublicSubscriptionRequestAPIView(APIView):
 
 # 2. واجهة استعراض وترقيم المفلتر لطلبات الاشتراك للأدمن
 class AdminSubscriptionRequestListAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def get(self, request):
         search_query = request.query_params.get('search', None)
@@ -1000,7 +1045,7 @@ class AdminSubscriptionRequestListAPIView(APIView):
 
 # 3. واجهة تعديل حالة أو حذف طلب اشتراك من الأدمن
 class AdminSubscriptionRequestDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def put(self, request, request_id):
         new_status = request.data.get('status', None)
@@ -1025,7 +1070,7 @@ class AdminSubscriptionRequestDetailAPIView(APIView):
 
 # 4. واجهة أتمتة إنشاء الحساب وربط العداد وتحويل الطلب لمكتمل (3-in-1 Provisioning)
 class AdminProvisionSubscriptionRequestAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]
 
     def post(self, request):
         serializer = ProvisionSubscriptionRequestSerializer(data=request.data)
@@ -1059,4 +1104,3 @@ class AdminProvisionSubscriptionRequestAPIView(APIView):
                 return Response({"status": "error", "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        

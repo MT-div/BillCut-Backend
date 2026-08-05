@@ -20,8 +20,30 @@ class IsResidentUserOnly(BasePermission):
             request.user.is_authenticated and 
             request.user.role == 'RESIDENT'
         )
-    
 
+class IsSuperAdminUserOnly(BasePermission):
+    """
+    صلاحية سيادية تضمن أن المستخدم مسجل دخوله ويحمل حصراً دور SUPER_ADMIN
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role == 'SUPER_ADMIN'
+        )
+
+from rest_framework.permissions import BasePermission
+
+class IsAdminOrSuperAdmin(BasePermission):
+    """
+    يسمح بالوصول للمشرفين العاديين أو المشرفين الأعلى (Super Admin)
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+            
+        # استخدام OR منطقي
+        return request.user.role in ['ADMIN', 'SUPER_ADMIN']
 
 class HasMeterApiKey(BasePermission):
     def has_permission(self, request, view):
