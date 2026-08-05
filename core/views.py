@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib
 from django.db.models import Sum
 
+from core.services.subscription_service import SubscriptionService
 from core.services.task_service import TaskService
 matplotlib.use('Agg') # تشغيل وضع Headless السيرفري لـ Matplotlib
 import matplotlib.pyplot as plt
@@ -24,12 +25,12 @@ from core.services.cache_service import CacheService
 from .permissions import HasMeterApiKey, IsAdminUserOnly, IsResidentUserOnly
 
 # استيراد النماذج والموديلات
-from .models import AnomalyThreshold, DailyConsumptionSummary, DailyForecast, Notification, NotificationSettings, User, Meter, UserMeterPreference
+from .models import AnomalyThreshold, DailyConsumptionSummary, DailyForecast, Notification, NotificationSettings, SubscriptionRequest, User, Meter, UserMeterPreference
 from core.services.threshold_scaling_service import ThresholdScalingService
 
 # استيراد عقود البيانات (الـ DTOs)
 from .serializers import (
-    AnomalyThresholdSerializer, LoginSerializer, MeterSerializer, PasswordUpdateSerializer, PhoneUpdateSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
+    AnomalyThresholdSerializer, CreateSubscriptionRequestSerializer, LoginSerializer, MeterSerializer, PasswordUpdateSerializer, PhoneUpdateSerializer, ProvisionSubscriptionRequestSerializer, SubscriptionRequestSerializer, UserCreationSerializer, ProfileUpdateSerializer, 
     BudgetSerializer, DashboardResponseSerializer, ConsumptionUpdateSerializer, 
     BulkIngestionSerializer, AnalyticsResponseSerializer, NotificationSerializer, 
     NotificationSettingsUpdateSerializer, UserMeterPreferenceUpdateSerializer, 
@@ -928,3 +929,134 @@ class AdminAnomalyThresholdAPIView(APIView):
                 "chartBase64": chart_base64
             }
         }, status=status.HTTP_200_OK)
+
+
+
+
+# 1. واجهة تقديم طلب الاشتراك العامة (مفتوحة للمواطنين مع الحماية)
+class PublicSubscriptionRequestAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [SensitiveActionThrottle] # حماية من هجمات الإغراق
+
+    def post(self, request):
+        serializer = CreateSubscriptionRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                sub_req = SubscriptionService.create_request(
+                    full_name=serializer.validated_data['fullName'],
+                    phone_number=serializer.validated_data['phoneNumber'],
+                    governorate=serializer.validated_data['governorate'],
+                    detailed_address=serializer.validated_data['detailedAddress']
+                )
+                return Response({
+                    "status": "success",
+                    "message": "تم تسجيل طلبك بنجاح، وسوف يتم التواصل معك لإتمام باقي الإجراءات وتزويدك ببيانات الدخول.",
+                    "data": {"requestId": sub_req.requestId}
+                }, status=status.HTTP_201_CREATED)
+            except ValueError as ve:
+                return Response({"status": "error", "message": str(ve)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"status": "error", "message": f"حدث خطأ أثناء حفظ الطلب: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# 2. واجهة استعراض وترقيم المفلتر لطلبات الاشتراك للأدمن
+class AdminSubscriptionRequestListAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
+    def get(self, request):
+        search_query = request.query_params.get('search', None)
+        status_filter = request.query_params.get('status', None)
+
+        queryset = SubscriptionRequest.objects.all().order_by('-createdAt')
+
+        # فلترة الحالة (PENDING, COMPLETED, CANCELLED)
+        if status_filter and status_filter in ['PENDING', 'COMPLETED', 'CANCELLED']:
+            queryset = queryset.filter(status=status_filter)
+
+        # البحث بالاسم، الهاتف، أو المحافظة
+        if search_query:
+            queryset = queryset.filter(
+                Q(fullName__icontains=search_query) |
+                Q(phoneNumber__icontains=search_query) |
+                Q(governorate__icontains=search_query)
+            )
+
+        paginator = LimitOffsetPagination()
+        paginator.default_limit = 10
+        page = paginator.paginate_queryset(queryset, request, view=self)
+
+        if page is not None:
+            serializer = SubscriptionRequestSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = SubscriptionRequestSerializer(queryset, many=True)
+        return Response({
+            "status": "success",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+# 3. واجهة تعديل حالة أو حذف طلب اشتراك من الأدمن
+class AdminSubscriptionRequestDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
+    def put(self, request, request_id):
+        new_status = request.data.get('status', None)
+        if not new_status or new_status not in ['PENDING', 'COMPLETED', 'CANCELLED']:
+            return Response({"status": "error", "message": "حالة الطلب غير صالحة."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            req = SubscriptionService.update_request_status(request_id, new_status)
+            return Response({
+                "status": "success",
+                "message": f"تم تحديث حالة الطلب إلى ({req.get_status_display()}) بنجاح."
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"status": "error", "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, request_id):
+        try:
+            SubscriptionService.delete_request(request_id)
+            return Response({"status": "success", "message": "تم حذف طلب الاشتراك بنجاح."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"status": "error", "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# 4. واجهة أتمتة إنشاء الحساب وربط العداد وتحويل الطلب لمكتمل (3-in-1 Provisioning)
+class AdminProvisionSubscriptionRequestAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserOnly]
+
+    def post(self, request):
+        serializer = ProvisionSubscriptionRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                user, temp_password, is_new_user, req = SubscriptionService.provision_and_complete_request(
+                    request_id=serializer.validated_data['requestId'],
+                    meter_id=serializer.validated_data['meterId'],
+                    alias=serializer.validated_data['alias']
+                )
+
+                if is_new_user:
+                    msg = "تم إنشاء حساب جديد للمواطن وتوليد كلمة مرور مؤقتة وربط العداد بنجاح."
+                else:
+                    msg = "المواطن مسجل مسبقاً في المنظومة. تم ربط العداد الجديد بحسابه الحالي بنجاح."
+
+                return Response({
+                    "status": "success",
+                    "message": msg,
+                    "data": {
+                        "userId": user.id,
+                        "username": user.username,
+                        "fullName": user.fullName,
+                        "phoneNumber": user.phoneNumber,
+                        "isNewUser": is_new_user,
+                        "temporaryPassword": temp_password,
+                        "meterAlias": serializer.validated_data['alias']
+                    }
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({"status": "error", "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        

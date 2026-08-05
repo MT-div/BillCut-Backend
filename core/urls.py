@@ -5,7 +5,10 @@ from .views import (
     AdminMeterDetailAPIView,
     AdminMeterListCreateAPIView,
     AdminMeterUnassignmentAPIView,
+    AdminProvisionSubscriptionRequestAPIView,
     AdminStatsAPIView,
+    AdminSubscriptionRequestDetailAPIView,
+    AdminSubscriptionRequestListAPIView,
     AdminTariffDetailAPIView,
     AdminTariffUpdateAPIView,
     AdminTriggerDailyTasksAPIView,
@@ -19,6 +22,7 @@ from .views import (
     NotificationLogAPIView,
     NotificationSettingsAPIView, 
     ProfileUpdateAPIView,
+    PublicSubscriptionRequestAPIView,
     SavePushTokenAPIView, 
     SetBudgetAPIView,
     UserMeterPreferenceAPIView,
@@ -74,5 +78,12 @@ urlpatterns = [
 
     
     path('admin/anomaly_threshold/', AdminAnomalyThresholdAPIView.as_view(), name='api_admin_anomaly_threshold'),
+
+
+    # 9. روابط طلبات الاشتراك العامة والإدارية
+    path('public/subscription_requests/create/', PublicSubscriptionRequestAPIView.as_view(), name='api_public_sub_request_create'),
+    path('admin/subscription_requests/', AdminSubscriptionRequestListAPIView.as_view(), name='api_admin_sub_request_list'),
+    path('admin/subscription_requests/<int:request_id>/', AdminSubscriptionRequestDetailAPIView.as_view(), name='api_admin_sub_request_detail'),
+    path('admin/subscription_requests/provision/', AdminProvisionSubscriptionRequestAPIView.as_view(), name='api_admin_sub_request_provision'),
 
 ]

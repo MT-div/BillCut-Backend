@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AnomalyThreshold, Notification, TariffTier, TariffVersion, User, Meter, UserMeterPreference, Budget, NotificationSettings
+from .models import AnomalyThreshold, Notification, SubscriptionRequest, TariffTier, TariffVersion, User, Meter, UserMeterPreference, Budget, NotificationSettings
 
 # 1. DTO الخاص باسترجاع بيانات المستخدم الأساسية
 class UserSerializer(serializers.ModelSerializer):
@@ -224,3 +224,21 @@ class AnomalyThresholdSerializer(serializers.ModelSerializer):
             'baseThresholdKWh', 'targetRegionMeanKWh', 
             'calculatedThresholdKWh', 'isActive', 'updatedAt'
         ]
+
+
+
+class SubscriptionRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionRequest
+        fields = ['requestId', 'fullName', 'phoneNumber', 'governorate', 'detailedAddress', 'status', 'createdAt']
+
+class CreateSubscriptionRequestSerializer(serializers.Serializer):
+    fullName = serializers.CharField(max_length=255, required=True)
+    phoneNumber = serializers.CharField(max_length=15, required=True)
+    governorate = serializers.CharField(max_length=50, required=True)
+    detailedAddress = serializers.CharField(required=True)
+
+class ProvisionSubscriptionRequestSerializer(serializers.Serializer):
+    requestId = serializers.IntegerField(required=True)
+    meterId = serializers.UUIDField(required=True)
+    alias = serializers.CharField(max_length=100, required=True)

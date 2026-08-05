@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    AnomalyThreshold, DailyConsumptionSummary, User, Meter, UserMeterPreference, Budget, 
+    AnomalyThreshold, DailyConsumptionSummary, SubscriptionRequest, User, Meter, UserMeterPreference, Budget, 
     ConsumptionReading, DailyForecast, MonthlyForecast, 
     Notification, NotificationSettings, TariffVersion, TariffTier
 )
@@ -19,3 +19,5 @@ admin.site.register(TariffVersion)
 admin.site.register(TariffTier)
 admin.site.register(DailyConsumptionSummary)
 admin.site.register(AnomalyThreshold)
+admin.site.register(SubscriptionRequest)
+

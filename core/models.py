@@ -220,3 +220,28 @@ class AnomalyThreshold(models.Model):
 
     def __str__(self):
         return f"Threshold for {self.targetRegionName}: {self.calculatedThresholdKWh} kWh (Active: {self.isActive})"
+
+# 14. كلاس طلبات الاشتراك للخدمة العامة (Subscription Request)
+class SubscriptionRequest(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'قيد الانتظار'),
+        ('COMPLETED', 'مكتمل'),
+        ('CANCELLED', 'ملغى'),
+    ]
+
+    requestId = models.BigAutoField(primary_key=True)
+    fullName = models.CharField(max_length=255)
+    phoneNumber = models.CharField(max_length=15)
+    governorate = models.CharField(max_length=50)
+    detailedAddress = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    createdAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status', '-createdAt'], name='sub_req_status_idx'),
+            models.Index(fields=['phoneNumber', 'status'], name='sub_req_phone_status_idx'),
+        ]
+
+    def __str__(self):
+        return f"Request {self.requestId} for {self.fullName} ({self.phoneNumber}) - Status: {self.status}"
